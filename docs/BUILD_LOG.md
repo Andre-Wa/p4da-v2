@@ -156,3 +156,86 @@ das validações da v1): boot com/sem cartão · standby por idle e manual
 pelo OSK e pelo teclado USB · rodar exemplo.lua e logger_exemplo.lua ·
 arquivos: renomear/copiar/mover/apagar · pulldown de brilho · regressões
 de toque (gesto de voltar, opt-out do editor).
+
+---
+
+# v2.1.0 — camada L2 (Wi-Fi + NTP via C6)
+
+## F7 — `components/pda_net` + UI de redes
+
+Contexto: o usuário validou a L1 em hardware (boot, config, leitura/
+edição de arquivos, scripts) e publicou o repo em
+`github.com/Andre-Wa/p4da-v2`. Próximo passo do roadmap = L2.
+
+- `components/pda_net/` = `wifi_net.[ch]` da v1 **1:1** (manager
+  scan-driven v5.15.0: multi-redes, rotação por reason com nomes reais,
+  backoff em task própria, espera ociosa com re-scan 120 s + relax 10
+  min, pause/resume de standby, seed de relógio NVS). Únicos acréscimos:
+  `_Static_assert(sizeof(lua_Number)==4)` (o componente inclui `lua.h`
+  p/ parsear `config/wifi.lua` em estado temporário → herda o contrato
+  `LUA_32BITS=1`, agora em DOIS CMakeLists) e o yml
+  (`esp_hosted ==2.12.9` + `esp_wifi_remote >=1.3.1`, rules esp32p4).
+- `sdkconfig.defaults`: voltam as linhas ESP_HOSTED_* (heap interno no
+  boot — assert app_startup.c:86 da v1) e SNTP.
+- UI: `networks.slint` (v1 1:1) + props/callbacks `net-*`,
+  `status-wifi`, `cfg-wifi-on/info`, `cfg-open-networks` de volta no
+  `app_ui.slint`; QuickPanel 156→192 px com linha de rede + atalho;
+  Config com 5 abas (Redes volta); tile Redes ativo no launcher.
+- App: `screen_networks.cpp` novo (scan/pick/prompt de senha via prompt
+  global do gerenciador — `g_wifi_pick_ssid` em `screens.h`); ramo
+  `wifipass` de volta em `screen_files.cpp`; chave de rádio +
+  open-networks em `screen_settings.cpp`; `wifi_net_on_event_ui` +
+  relógio HH:MM em `status_bar.cpp`; seed/pause/resume/init em
+  `app_main.cpp`; dispatch "Redes" no launcher.
+- `tools/flash_c6_wifi.sh` (v1) + `sdcard-template/pda/config/wifi.lua`
+  (formato legado aceito pelo loader; o firmware reescreve como lista).
+- Docs: `WIFI.md` carregado (dono das decisões de rede); ARCHITECTURE
+  §4.6 (o único upcall do sistema), grafo com pda_net; ROADMAP L2
+  código-pronto; MIGRATION §2 marcado executado; DEPENDENCIAS/TESTES/
+  README atualizados.
+
+Validação de host desta fase: syntaxcheck **12/12 TUs** · hosttest cfg/
+uigate/lua-bind verdes (inalterados) · md 0 falhas · slint limpo ·
+**12 renders** (networks de volta, panel 192 px). Wi-Fi em si NÃO tem
+teste de host (pilha wifi_remote não stubável com custo razoável — a v1
+também não tinha): aceite em hardware via
+`release/v2.1.0/CHECKLIST_HW_v2.1.0.md`.
+
+---
+
+# v2.1.1 — hotfix de build (esp_wifi em pda_net)
+
+## F9 — `PRIV_REQUIRES esp_wifi` no pda_net
+
+**Sintoma (1º build de alvo da v2.1.0, máquina do usuário):**
+`fatal error: esp_wifi.h: No such file or directory` em
+`components/pda_net/wifi_net.c`. O próprio IDF diagnostica: o header é do
+componente `esp_wifi`, ausente dos requirements de pda_net.
+
+**Causa raiz:** na v1 o `esp_wifi` estava no REQUIRES do `main`
+monolítico (que continha wifi_net.c); na migração p/ componentes o
+`esp_wifi_remote` entrou no yml mas o `esp_wifi` (dono dos HEADERS — o
+remote proxy-iza chamadas, não re-exporta headers no IDF 5.5) se perdeu.
+Build de host não pega isso: o syntaxcheck cobre `main/*.cpp` contra
+stubs, e os `.c` de componentes só compilam no build de alvo.
+
+**Fix:** `PRIV_REQUIRES esp_wifi` (PRIV porque `wifi_net.h`, header
+público, não inclui `esp_wifi.h` — ninguém além do componente precisa).
+
+**Auditoria completa de includes × REQUIRES (todos os componentes):**
+feita à mão contra o IDF 5.5 — pda_board (20 includes: esp_lcd,
+esp_driver_gpio/i2c/ledc, fatfs, sdmmc, 4 gerenciados, comuns), pda_script
+(lua via espressif__lua, nvs_flash, esp_timer, pda_board), pda_power
+(esp_driver_gpio, esp_sleep/esp_system comuns, nvs_flash), pda_usb (usb +
+hid_host), pda_net (esp_event, esp_netif, lwip/sntp, nvs_flash, lua via
+cadeia pública pda_script→espressif__lua, + esp_wifi PRIV). **Único gap
+era o esp_wifi.** Tabela fica como referência p/ componentes futuros:
+todo include de componente tem que casar com REQUIRES/PRIV_REQUIRES ou
+com a lista comum do IDF (cxx/newlib/freertos/esp_hw_support/heap/log/
+soc/hal/esp_rom/esp_common/esp_system).
+
+**Mudança de processo (registra aqui):** release só taggeia depois de UM
+build de alvo completo (`idf.py build`) — host verde é necessário mas não
+suficiente; visibilidade de include entre componentes é propriedade do
+build de alvo. Os warnings de `esp_lcd_touch_get_coordinates` deprecated
+no slint-esp.cpp seguem ACEITOS (docs/DEPENDENCIAS.md, warnings aceitos).

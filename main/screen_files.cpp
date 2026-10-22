@@ -13,6 +13,7 @@
 #include "screens.h"
 
 #include "storage_init.h"
+#include "wifi_net.h"      /* L2: prompt "wifipass" conecta pela tela Redes */
 
 #include "esp_log.h"
 
@@ -351,6 +352,14 @@ void files_wire(AppWindow &ui)
                     return;
                 }
             }
+        } else if (g_fm.prompt_action == "wifipass") {
+            /* L2: senha digitada no prompt global p/ rede fechada escolhida
+             * na tela Redes (o SSID ficou em g_wifi_pick_ssid). */
+            char msg[200];
+            snprintf(msg, sizeof(msg), "[wifi] conectando em \"%s\"", g_wifi_pick_ssid.c_str());
+            log_line(msg, NULL);
+            g_ui->set_cfg_wifi_on(true);   /* M5.3.2: switch reflete o rádio */
+            wifi_net_connect(g_wifi_pick_ssid.c_str(), g_fm.prompt_text.c_str(), true);
         } else if (g_fm.prompt_action == "delete") {
             esp_err_t err = storage_rm_rf(target.c_str());
             snprintf(msg, sizeof(msg), err == ESP_OK ? "[ok] apagado: %s" : "[erro] apagar (%s)",

@@ -21,6 +21,8 @@ incompatibilidade com IDF 5.5.1 (auditoria da v1 contra o registry).
 | `joltwallet/littlefs` | **==1.22.3** | pda_board | ✅ (formato on-disk estável na série 2.x) |
 | `espressif/lua` | **==5.5.0** | pda_script | ⚠️ ABI 32-bit PRIVATE — ver abaixo |
 | `espressif/usb_host_hid` | **==1.2.1** | pda_usb | ✅ |
+| `espressif/esp_hosted` | **==2.12.9** | pda_net | ✅ (par c/ slave 2.12.9) |
+| `espressif/esp_wifi_remote` | **>=1.3.1** | pda_net | ✅ |
 
 `idf: ">=5.3,<6.0"` em todos os yml: IDF 6.x recusa P4 rev <3.1 (chip
 ES) e muda APIs junto (st7701 2.x etc.).
@@ -45,7 +47,7 @@ ES) e muda APIs junto (st7701 2.x etc.).
 
 | Camada | Dependências |
 |---|---|
-| L2 | `espressif/esp_hosted ==2.12.9` + `espressif/esp_wifi_remote >=1.3.1` (rules esp32p4) em `pda_net`; linhas ESP_HOSTED_*/SNTP no sdkconfig |
+| L2 (v2.1.0, no build) | `espressif/esp_hosted ==2.12.9` + `espressif/esp_wifi_remote >=1.3.1` (rules esp32p4) em `pda_net`; linhas ESP_HOSTED_*/SNTP no sdkconfig |
 | L3 | `espressif/usb_host_uac ==1.5.0` + `espressif/esp_codec_dev ==1.6.2` em `pda_audio` |
 | L4 | nenhuma nova (ADC/SAR são do IDF) |
 

@@ -12,18 +12,20 @@
 // Sem ícones de propósito: o subset MaterialIcons embarcado não tem glifos
 // de sol/wifi/lua; texto puro não muda o charset (âncora do app_ui.slint).
 //
-// v2/L1: brilho + Config + Suspender. A linha de estado de rede e o atalho
-// "Redes" voltam na camada L2 (docs/MIGRATION.md); target-h 192->156.
-// IMPORTANTE: qs-h no app_ui.slint tem que acompanhar target-h.
+// v2.1.0 (L2): linha de estado de rede + atalho "Redes" de volta
+// (target-h 192). IMPORTANTE: qs-h no app_ui.slint tem que acompanhar.
 import { Slider } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { TonalButton } from "./buttons.slint";
 
 export component QuickPanel inherits Rectangle {
     in property <length> h: 0px;          // altura corrente (AppWindow anima)
-    in property <length> target-h: 156px; // altura com o painel todo aberto
+    in property <length> target-h: 192px; // altura com o painel todo aberto
     in-out property <float> brightness;   // <=> cfg-brightness do AppWindow
+    in property <string> wifi-info;       // SSID ou "offline" (vivo, do C++)
+    in property <string> wifi-rssi;       // "wifi -54 dBm" (status bar)
     callback brightness-live(float);
+    callback open-networks();
     callback open-config();
     callback sleep-now();
     callback request-close();
@@ -110,9 +112,36 @@ export component QuickPanel inherits Rectangle {
         }
 
 
+        // ---- estado da rede (mesma fonte viva da status bar) ----
+        Rectangle {
+            height: 24px;
+            HorizontalLayout {
+                spacing: Theme.sp-sm;
+                Text {
+                    text: "Rede: " + root.wifi-info;
+                    color: Theme.on-surface;
+                    font-size: Theme.type-label;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.wifi-rssi;
+                    color: Theme.on-surface-var;
+                    font-size: Theme.type-label;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
         // ---- atalhos (todos reusam callbacks existentes do AppWindow) ----
         HorizontalLayout {
             spacing: Theme.sp-sm;
+            TonalButton {
+                text: "Redes"; h: 48px; fsize: Theme.type-label;
+                horizontal-stretch: 1;
+                clicked => { root.open-networks(); }
+            }
             TonalButton {
                 text: "Config"; h: 48px; fsize: Theme.type-label;
                 horizontal-stretch: 1;

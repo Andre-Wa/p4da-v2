@@ -1,8 +1,8 @@
 // screens/settings.slint — Configurações em abas c/ barra lateral de ícones
 // (M4.5: resolve o overflow da tela única; M3: sidebar tonal + switches)
 //
-// v2/L1: 4 abas — Tela(0) Sistema(1) Entrada(2) Sobre(3). A aba Redes e as
-// linhas de bateria/som da v1 voltam nas camadas L2/L3/L4 (docs/MIGRATION.md).
+// v2.1.0 (L2): 5 abas — Tela(0) Sistema(1) Entrada(2) Redes(3) Sobre(4).
+// A aba Redes volta com a camada L2 (wifi_net); bateria/som seguem L3/L4.
 import { Slider, Switch } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { FilledButton, TonalButton, DangerButton, GhostButton } from "../elements/buttons.slint";
@@ -65,10 +65,18 @@ export component SettingsScreen inherits Rectangle {
     in-out property <float> deep-s: 0;
     in-out property <bool> wake-touch: false;
     in-out property <bool> boot-standby: false;
+    in-out property <bool> wifi-on: true;
+    callback set-wifi-on(bool);
+    // M5.3.2 (v1): efeito IMEDIATO + persistência imediata (como o seletor
+    // de cursor); sem isto a chave só valeria no botão Salvar e "sumia" ao
+    // sair da tela (relato da 11ª rodada).
+    changed wifi-on => { root.set-wifi-on(root.wifi-on); }
     in-out property <bool> osk-auto: true;
     in-out property <bool> light-sleep: false;
     in property <string> store-info;
+    in property <string> wifi-info;
     in-out property <int> tab: 0;
+    callback open-networks();
     callback save();
     callback reset();
     callback sleep-now();
@@ -90,7 +98,8 @@ export component SettingsScreen inherits Rectangle {
                 TabBtn { icon: ""; selected: root.tab == 0; clicked => { root.tab = 0; } }
                 TabBtn { icon: ""; selected: root.tab == 1; clicked => { root.tab = 1; } }
                 TabBtn { icon: ""; selected: root.tab == 2; clicked => { root.tab = 2; } }
-                TabBtn { icon: ""; selected: root.tab == 3; clicked => { root.tab = 3; } }
+                TabBtn { icon: ""; selected: root.tab == 3; clicked => { root.tab = 3; } }
+                TabBtn { icon: ""; selected: root.tab == 4; clicked => { root.tab = 4; } }
             }
         }
 
@@ -106,6 +115,7 @@ export component SettingsScreen inherits Rectangle {
                     label: root.tab == 0 ? "Tela"
                          : root.tab == 1 ? "Sistema"
                          : root.tab == 2 ? "Entrada"
+                         : root.tab == 3 ? "Redes"
                          : "Sobre";
                     horizontal-stretch: 1;
                 }
@@ -191,6 +201,21 @@ export component SettingsScreen inherits Rectangle {
             }
 
             if root.tab == 3: VerticalLayout {
+                spacing: Theme.sp-md;
+                Text { text: "Wi-Fi: " + root.wifi-info; color: Theme.on-surface; font-size: Theme.type-body; }
+                SwitchRow { label: "Wi-Fi ligado (radio)"; value <=> root.wifi-on; }
+                // v5.14.0: sem width fixo → preenche a coluna (consistente
+                // com "Teste som" na aba Sistema).
+                TonalButton { text: "Abrir tela de redes"; clicked => { root.open-networks(); } }
+                Text {
+                    text: "Credenciais em config/wifi.lua (SSID, senha, auto_connect).";
+                    font-size: Theme.type-tiny;
+                    color: Theme.on-surface-var;
+                    wrap: word-wrap;
+                }
+            }
+
+            if root.tab == 4: VerticalLayout {
                 spacing: Theme.sp-sm;
                 Text { text: "PDA p4da — v2.0.0 (L1 fundação)"; color: Theme.on-surface; font-size: Theme.type-title; font-weight: 700; }
                 Text { text: "Placa: GUITION JC4880P443C_I_W (ESP32-P4 + C6)"; color: Theme.on-surface-var; font-size: Theme.type-label; }

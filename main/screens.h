@@ -95,6 +95,14 @@ void settings_open(void);       /* push + navega p/ Settings */
 void push_settings_to_ui(void); /* também usado no boot e pós-wake */
 
 /* ================================================================== */
+/* REDES (screen_networks.cpp) — camada L2                             */
+/* ================================================================== */
+void networks_wire(AppWindow &ui);
+void networks_open(void);       /* navega p/ Networks + scan */
+void net_start_scan(void);      /* launcher/quick panel/rescan */
+extern std::string g_wifi_pick_ssid;  /* SSID aguardando senha no prompt */
+
+/* ================================================================== */
 /* LAUNCHER (screen_launcher.cpp)                                      */
 /* ================================================================== */
 void launcher_wire(AppWindow &ui);

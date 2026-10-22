@@ -74,7 +74,12 @@ Legenda: **=** carregado 1:1 · **~** carregado com adaptação ·
 | docs/ARCHITECTURE.md | docs/ARCHITECTURE.md | reescrito (v2) |
 | — | docs/{BUILD_LOG,MIGRATION,TESTES}.md | novos |
 
-## 2. Religando a L2 (Wi-Fi + NTP via C6)
+## 2. Religando a L2 (Wi-Fi + NTP via C6) — FEITO na v2.1.0
+
+> Executado exatamente como planejado abaixo (commit F7): pda_net,
+> screen_networks.cpp, networks.slint, props `net-*`/`status-wifi`/
+> `cfg-wifi-*` de volta no app_ui, QuickPanel 192px, aba Redes, tile
+> ativo, seed de relógio, pause/resume no standby, flash_c6_wifi.sh.
 
 1. `components/pda_net/` novo: `wifi_net.[ch]` da v1 1:1 (scan-driven
    manager, multi-redes em `config/wifi.lua`, reason por nome, backoff).

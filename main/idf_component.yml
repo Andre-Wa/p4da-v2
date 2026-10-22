@@ -10,9 +10,8 @@ dependencies:
   slint/slint:
     version: "==1.12.1"
 
-  # L2 (Wi-Fi/NTP) acrescentará aqui, como na v1:
-  #   espressif/esp_hosted:      "==2.12.9"  (rules: target in [esp32p4])
-  #   espressif/esp_wifi_remote: ">=1.3.1"   (rules: target in [esp32p4])
+  # L2 (Wi-Fi/NTP) vive em components/pda_net (esp_hosted 2.12.9 +
+  # esp_wifi_remote >=1.3.1, rules esp32p4).
   # L3 (áudio) acrescentará em components/pda_usb (ou pda_audio):
   #   espressif/usb_host_uac:    "==1.5.0"
   #   espressif/esp_codec_dev:   "==1.6.2"

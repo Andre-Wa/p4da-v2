@@ -41,6 +41,7 @@ INCLUDES=(
     -I components/pda_script/include
     -I components/pda_power/include
     -I components/pda_usb/include
+    -I components/pda_net/include
 )
 
 fail=0

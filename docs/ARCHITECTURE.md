@@ -18,9 +18,10 @@ a regra nasceu de um incidente de campo) é regressão.
 │  input_usb                                                        │
 ├───────────────┬───────────────┬───────────────┬───────────────────┤
 │ pda_script    │ pda_power     │ pda_usb       │ (futuros:         │
-│ VM Lua 5.5 +  │ degraus de    │ USB Host HID  │  pda_net L2,      │
-│ config Lua    │ energia       │               │  pda_audio L3,    │
-│ (LUA_32BITS)  │               │               │  pda_battery L4)  │
+│ VM Lua 5.5 +  │ degraus de    │ USB Host HID  │  pda_audio L3,    │
+│ config Lua    │ energia       ├───────────────┤  pda_battery L4)  │
+│ (LUA_32BITS)  │               │ pda_net (L2)  │                   │
+│               │               │ Wi-Fi+NTP C6  │                   │
 ├───────────────┴───────────────┴───────────────┴───────────────────┤
 │ pda_board — BSP da JC4880P443C_I_W                                │
 │  board_config.h (pinagem reconciliada) · display ST7701S ·        │
@@ -35,7 +36,8 @@ nada da camada app; a camada app não inclui nada de outra camada app
 ```
 pda_board  ←  pda_script  ←  pda_power
 pda_usb (independente)
-main → {pda_board, pda_script, pda_power, pda_usb}
+pda_board ← pda_script ← pda_net   (wifi.lua, timezone/ntp, NVS)
+main → {pda_board, pda_script, pda_power, pda_usb, pda_net}
 ```
 
 ### 1.1 Por que componentes ESP-IDF (decisão de arquitetura do v2)
@@ -166,6 +168,17 @@ wake source de usuário — botões fora do domínio LP): o flag NVS do
 pda_power diz que há sessão; o restore **parseia** no bring-up e
 **aplica** no event loop via `ui_post` (M4.15.3: aplicar antes do loop
 era o mesmo assert do §3.2).
+
+### 4.6 pda_net (L2) e o único upcall do sistema
+
+`wifi_net.c` (v1 1:1) chama `wifi_net_on_event_ui(connected, rssi)`,
+definido em `status_bar.cpp` — o ÚNICO símbolo que um componente chama
+para cima em todo o v2 (na v1 era `main.cpp`). É deliberado e isolado: o
+sink faz `ui_post()` e nada mais. Candidato a inversão (provider
+registrado) no próximo refactor que tocar em pda_net — mesmo padrão do
+blind-provider do touch (§4.2). `pda_net` também inclui `lua.h` (parse
+de `config/wifi.lua` em estado temporário) e por isso herda o contrato
+`LUA_32BITS=1` + `_Static_assert` próprio (ver §5 e DEPENDENCIAS #1).
 
 ## 5. Proteção da VM Lua (herdada, intacta)
 

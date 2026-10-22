@@ -27,13 +27,18 @@ void launcher_wire(AppWindow &ui)
         } else if (n == "Scripts") {
             scripts_open();
             session_set_app("scripts");
+        } else if (n == "Redes") {
+            networks_open();
+            /* v1: a tela Redes não persiste como sessão própria (o
+             * restore não tem ramo p/ ela — volta no launcher). */
+            session_set_app("launcher");
         } else if (n == "Config") {
             settings_open();
             session_set_app("settings");
         } else {
-            /* Rede/Música: camadas L2/L3 (docs/ROADMAP.md). Agenda/
-             * Contatos/Relógio: L5. Tiles chegam aqui desabilitados;
-             * o log é rede de segurança p/ habilitar sem despacho. */
+            /* Música: camada L3 (docs/ROADMAP.md). Agenda/Contatos/
+             * Relógio: L5. Tiles chegam aqui desabilitados; o log é rede
+             * de segurança p/ habilitar sem despacho. */
             ESP_LOGW(TAG, "app não disponível nesta camada: %s", n.c_str());
         }
     });

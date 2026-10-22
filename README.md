@@ -30,9 +30,14 @@ de host sem hardware, camadas de evolução L2–L5).
   pulldown de ajustes rápidos com brilho ao vivo
 - Tema Material You dark com 5 paletas de acento (M3 adaptado)
 
-**Fora da L1 (camadas seguintes — `docs/ROADMAP.md`):** Wi-Fi/NTP (L2),
-áudio UAC/I2S + player (L3), leitor de bateria + `pda.battery.*` (L4),
-apps de PDA/OTA (L5). Os tiles cinzas no launcher são o contrato visual.
+**Camada L2 (v2.1.0, código pronto p/ validação em HW):** Wi-Fi STA +
+NTP via C6 — tela Redes (scan/senha/rotação de redes salvas), chave de
+rádio na Config, relógio HH:MM sincronizado, quick panel com estado da
+rede. Sem `config/wifi.lua` o PDA segue offline como na L1.
+
+**Fora (camadas seguintes — `docs/ROADMAP.md`):** áudio UAC/I2S + player
+(L3), leitor de bateria + `pda.battery.*` (L4), apps de PDA/OTA (L5). Os
+tiles cinzas no launcher são o contrato visual.
 
 ## Build
 
@@ -77,7 +82,8 @@ p4da-v2/
 │   ├── pda_board/               # BSP: board_config, display, touch, storage
 │   ├── pda_script/              # VM Lua protegida + config (LUA_32BITS aqui)
 │   ├── pda_power/               # degraus de energia (POWER.md)
-│   └── pda_usb/                 # USB Host HID (host lib instalada aqui)
+│   ├── pda_usb/                 # USB Host HID (host lib instalada aqui)
+│   └── pda_net/                 # Wi-Fi STA + NTP via C6 (L2, WIFI.md)
 ├── main/                        # camada app: 1 tela = 1 módulo
 │   ├── app_main.cpp             #   composition root (bring-up + injeções)
 │   ├── app_context.[ch]         #   contrato interno (ui_post, threads, nav)
@@ -102,3 +108,4 @@ p4da-v2/
 | `docs/POWER.md` | degraus de energia + plano de medição |
 | `docs/LUA.md` | formato da config + referência da API `pda.*` |
 | `docs/TESTES.md` | suíte de host (o que cada teste prova) |
+| `docs/WIFI.md` | decisões da rede (manager scan-driven, reasons, standby) |

@@ -18,6 +18,7 @@
 #include "pda_config.h"
 #include "power_mgmt.h"
 #include "storage_init.h"
+#include "wifi_net.h"
 
 #include "esp_log.h"
 
@@ -40,6 +41,10 @@ void push_settings_to_ui(void)
     g_ui->set_cfg_boot_standby(s->boot_btn_standby);
     g_ui->set_cfg_osk_auto(s->onscreen_keyboard_auto);
     g_ui->set_cfg_light_sleep(s->light_sleep);
+    g_ui->set_cfg_wifi_on(s->wifi_enabled);
+
+    g_ui->set_cfg_wifi_info(slint::SharedString(
+        wifi_net_connected() ? wifi_net_ssid() : "offline"));
 
     char buf[96];
     storage_sd_describe(buf, sizeof(buf));
@@ -114,6 +119,17 @@ void settings_wire(AppWindow &ui)
         pda_config_save();
         g_ui->set_cfg_accent(slint::SharedString(pda_settings()->accent));
         ESP_LOGI(TAG, "[config] acento salvo: %s", pda_settings()->accent);
+    });
+    ui.on_cfg_set_wifi_on([](bool on) {
+        activity();
+        pda_settings_set("net.wifi_enabled", 0, true, on, NULL);
+        pda_config_save();
+        wifi_net_set_enabled(on);
+        ESP_LOGI(TAG, "[config] wifi %s pela chave", on ? "ligado" : "desligado");
+    });
+    ui.on_cfg_open_networks([]() {
+        activity();
+        networks_open();
     });
     ui.on_cfg_hibernate([]() {
         power_mgmt_hibernate();

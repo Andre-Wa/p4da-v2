@@ -69,7 +69,7 @@ export component LauncherScreen inherits Rectangle {
                 Tile { icon: ""; label: "Scripts"; clicked => { root.open-app("Scripts"); } }
             }
             Row {
-                Tile { icon: ""; label: "Redes"; enabled: false;  }
+                Tile { icon: ""; label: "Redes";  clicked => { root.open-app("Redes"); } }
                 Tile { icon: ""; label: "Config"; clicked => { root.open-app("Config"); } }
                 Tile { icon: ""; label: "Música"; enabled: false;  }
             }

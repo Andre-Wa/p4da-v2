@@ -18,9 +18,9 @@ suíte de host verde. Nada de L(n+1) começa com pendência de L(n)
   e restaurar nota; editar via OSK e via USB; scripts exemplo+logger;
   ops de arquivo; pulldown de brilho; gestos (voltar/opt-out do editor).
 
-## L2 — Conectividade (Wi-Fi + NTP via C6)
+## L2 — Conectividade (Wi-Fi + NTP via C6) — código em v2.1.0, aceite em HW pendente
 
-- [ ] `components/pda_net` (wifi_net da v1: scan-driven, multi-redes,
+- [x] `components/pda_net` (wifi_net da v1: scan-driven, multi-redes,
       reason por nome, backoff) + tela Redes + chave de rádio na Config
 - [ ] NTP + relógio real na status bar (seed de RTC via NVS no boot)
 - [ ] QuickPanel com linha de rede + atalho Redes

@@ -38,9 +38,9 @@ históricas (título invisível por line-box, crase sozinha).
 
 Compila o `.slint` em modo `embed-for-software-renderer` e renderiza 11
 modos em `docs/img/`: reading/reading2 (markdown + scroll), edit
-(cursor under/block), prompt (OSK + cursor de campo), panel/paneldrag
-(pulldown aberto/arrastado), settings/settings2 (abas), launcher (tiles
-cinzas do roadmap), coltest/fontpitch (sondas de pitch do glifo mono —
+(cursor under/block), networks (lista scan-driven), prompt (OSK + cursor
+de campo), panel/paneldrag (pulldown aberto/arrastado), settings/
+settings2 (abas), launcher (tiles do roadmap), coltest/fontpitch (sondas de pitch do glifo mono —
 drift do cursor-bloco). Foi assim que a v1 achou o bug do prompt que 3
 rodadas de conjectura não acharam — e foi assim que o v2 achou o ícone
 errado da sidebar de Config (F3→F5).
@@ -54,7 +54,9 @@ errado da sidebar de Config (F3→F5).
 ## O que a suíte NÃO cobre (e precisa de placa)
 
 Bring-up real (sequência de init, PSRAM, DSI), timings de energia,
-comportamento de SD/host USB físico, GT911 warm-boot, áudio. Por isso
+comportamento de SD/host USB físico, GT911 warm-boot, áudio e TODO o
+caminho Wi-Fi/NTP (pda_net não tem teste de host — aceite em hardware,
+checklist em release/v2.1.0/CHECKLIST_HW_v2.1.0.md). Por isso
 cada camada fecha com rodada de hardware + checklist em
 `docs/BUILD_LOG.md`/`docs/ROADMAP.md` — e os uploads de campo
 (logs/CSVs) continuam sendo anexados ao histórico como evidência.

@@ -58,6 +58,19 @@ CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
 CONFIG_PM_ENABLE=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 
+# --- ESP-Hosted (C6/SDIO, camada L2): alívio de RAM interna no boot ---
+# O hosted init roda como hook de startup, ANTES da task main; sem isso ele
+# esgota o heap interno e o assert de app_startup.c:86 derruba o boot
+# (observado na v1 em 2026-09-24). Pilhas das tasks do hosted -> PSRAM e
+# filas SDIO menores (cada slot = buffer DMA interno).
+CONFIG_ESP_HOSTED_DFLT_TASK_FROM_SPIRAM=y
+CONFIG_ESP_HOSTED_SDIO_TX_Q_SIZE=10
+CONFIG_ESP_HOSTED_SDIO_RX_Q_SIZE=10
+
+# --- SNTP (relógio via NTP no C6, camada L2) ---
+CONFIG_LWIP_SNTP=y
+CONFIG_LWIP_SNTP_MAX_SERVERS=2
+
 # --- C++ (Slint) ---
 CONFIG_COMPILER_CXX_EXCEPTIONS=y
 CONFIG_COMPILER_CXX_RTTI=y

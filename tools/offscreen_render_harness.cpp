@@ -1,7 +1,7 @@
 // Harness: renderiza telas do p4da-v2 offscreen com o software renderer do
 // Slint 1.12.1 (mesmo backend do ESP) para validar estilos/cursor em pixel.
-// v2/L1: modos music/networks removidos (camadas L2/L3); panel usa a nova
-// altura 156px (quick_panel sem linha de rede); modo launcher acrescentado.
+// v2.1.0 (L2): modo networks de volta; panel 192px (linha de rede no
+// quick_panel); modo music segue para a L3; launcher acrescentado na L1.
 #include <slint-platform.h>
 #include <memory>
 #include <vector>
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
     // é 0ms, então o frame único do harness mostra o estado exato.
     bool panel = false;
     float panel_h = 0.f;
-    if (mode == "panel")     { panel = true; panel_h = 156.f; mode = "reading"; }
+    if (mode == "panel")     { panel = true; panel_h = 192.f; mode = "reading"; }
     if (mode == "paneldrag") { panel = true; panel_h = 110.f; mode = "reading"; }
 
     ui->set_active_app(AppState::Editor);
@@ -126,6 +126,25 @@ int main(int argc, char **argv)
             runmodels->push_back(rm);
         }
         ui->set_ed_runs(runmodels);
+    } else if (mode == "networks") {
+        /* L2: tela Redes com amostra p/ auditar layout Slint 1.12 */
+        ui->set_active_app(AppState::Networks);
+        auto mk = [](std::vector<std::string> v) {
+            auto m = std::make_shared<slint::VectorModel<slint::SharedString>>();
+            for (auto &x : v) m->push_back(slint::SharedString(x));
+            return m;
+        };
+        auto mb = [](std::vector<bool> v) {
+            auto m = std::make_shared<slint::VectorModel<bool>>();
+            for (bool x : v) m->push_back(x);
+            return m;
+        };
+        ui->set_net_ssids(mk({"Redstone F3", "Vizinhas-2G", "CafeAberto", "ssid_grande_paguemos_novamente"}));
+        ui->set_net_infos(mk({"-42 dBm", "-71 dBm", "-88 dBm", "-55 dBm"}));
+        ui->set_net_locked(mb({false, true, true, false}));
+        ui->set_net_current(slint::SharedString(""));
+        lines = { "", "", "" };
+        styles = { 9, 9, 9 };
     } else if (mode == "settings" || mode == "settings2") {
         /* v5.14.0 (v1): auditoria visual das abas de Config — Sistema
          * (tab 1) e Entrada (tab 2): botões com largura intrínseca do
@@ -134,6 +153,7 @@ int main(int argc, char **argv)
         ui->set_active_app(AppState::Settings);
         ui->set_cfg_tab(mode == "settings" ? 1 : 2);
         ui->set_cfg_store_info(slint::SharedString("SD ok · 1.8 GB livres"));
+        ui->set_cfg_wifi_info(slint::SharedString("Redstone F3"));
         ui->set_status_store(slint::SharedString("SD ok"));
         ui->set_status_store_icon(slint::SharedString("sd"));
         ui->set_status_pwr(slint::SharedString("ATIVO"));
@@ -221,6 +241,8 @@ int main(int argc, char **argv)
 
     if (panel) {
         ui->set_cfg_brightness(62.f);
+        ui->set_cfg_wifi_info(slint::SharedString("Redstone"));
+        ui->set_status_wifi(slint::SharedString("wifi -54 dBm"));
         ui->set_status_store(slint::SharedString("SD ok"));
         ui->set_status_store_icon(slint::SharedString("sd"));
         ui->set_status_pwr(slint::SharedString("ATIVO"));
