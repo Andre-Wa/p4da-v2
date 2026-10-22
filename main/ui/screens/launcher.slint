@@ -1,0 +1,90 @@
+// screens/launcher.slint — grade 3x3 de tiles com ícone + legenda (M4.5)
+import { Theme } from "../theme.slint";
+import { Surface } from "../elements/surfaces.slint";
+import { IconFileText, IconFolder, IconTerminal, IconSettings, IconWifi,
+         IconMusic, IconEvent, IconPerson, IconClock } from "../elements/icons.slint";
+
+component Tile inherits Surface {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback clicked;
+    level: 2;
+    border-radius: Theme.shape-lg;
+    clip: true;
+
+    VerticalLayout {
+        padding: Theme.sp-sm;
+        spacing: Theme.sp-xs;
+        alignment: center;
+        Text {
+            text: root.icon;
+            font-family: "Material Icons";
+            font-size: 34px;
+            color: root.enabled ? Theme.primary : Theme.on-surface-var;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.label;
+            font-size: Theme.type-label;
+            color: root.enabled ? Theme.on-surface : Theme.on-surface-var;
+            horizontal-alignment: center;
+        }
+    }
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.state-pressed;
+        opacity: 10%;
+        visible: ta.pressed && root.enabled;
+    }
+    ta := TouchArea {
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component LauncherScreen inherits Rectangle {
+    callback open-app(string);
+
+    VerticalLayout {
+        padding: Theme.sp-lg;
+        spacing: Theme.sp-md;
+
+        Text {
+            text: "PDA";
+            font-size: Theme.type-display;
+            font-weight: 700;
+            color: Theme.on-surface;
+            horizontal-alignment: center;
+        }
+
+        GridLayout {
+            spacing: Theme.sp-md;
+            Row {
+                Tile { icon: ""; label: "Notas"; clicked => { root.open-app("Notas"); } }
+                Tile { icon: ""; label: "Arquivos"; clicked => { root.open-app("Arquivos"); } }
+                Tile { icon: ""; label: "Scripts"; clicked => { root.open-app("Scripts"); } }
+            }
+            Row {
+                Tile { icon: ""; label: "Redes"; enabled: false;  }
+                Tile { icon: ""; label: "Config"; clicked => { root.open-app("Config"); } }
+                Tile { icon: ""; label: "Música"; enabled: false;  }
+            }
+            Row {
+                Tile { icon: ""; label: "Agenda"; enabled: false; clicked => { root.open-app("Agenda"); } }
+                Tile { icon: ""; label: "Contatos"; enabled: false; clicked => { root.open-app("Contatos"); } }
+                Tile { icon: ""; label: "Relógio"; enabled: false; clicked => { root.open-app("Relogio"); } }
+            }
+        }
+
+        Text {
+            text: "Cinza = próximas camadas (docs/ROADMAP.md)";
+            font-size: Theme.type-label;
+            color: Theme.on-surface-var;
+            horizontal-alignment: center;
+        }
+    }
+}

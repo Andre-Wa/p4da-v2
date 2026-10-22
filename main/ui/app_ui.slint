@@ -1,0 +1,472 @@
+// app_ui.slint — janela principal: status bar + roteador de telas
+//
+// Este arquivo é a ENTRADA do Slint (slint_target_sources no CMake) e dona
+// da API pública usada pela camada app (main/*.cpp — propriedades e
+// callbacks `ed-*`, `cfg-*`, `file-*` etc.). As telas vivem em
+// screens/*.slint e os tokens em theme.slint — mexa lá sem tocar aqui
+// (e vice-versa).
+//
+// v2/L1 (fundação): sem telas Redes/Música e sem indicadores de
+// Wi-Fi/bateria — voltam nas camadas L2/L3/L4 junto com as propriedades
+// daqui (mapa completo em docs/MIGRATION.md).
+import { Theme } from "theme.slint";
+import { Divider } from "elements/surfaces.slint";
+import { IconForKind } from "elements/icons.slint";
+import { PromptOverlay } from "elements/prompt.slint";
+import { QuickPanel } from "elements/quick_panel.slint";
+import { LauncherScreen } from "screens/launcher.slint";
+import { FileManagerScreen } from "screens/files.slint";
+import { NotesListScreen } from "screens/notes.slint";
+import { EditorScreen, MdRun } from "screens/editor.slint";
+import { ScriptsScreen } from "screens/scripts.slint";
+import { SettingsScreen } from "screens/settings.slint";
+// Fonte default da app: família INTERNA "PDA Mono" em TODA a interface.
+// "PDA Mono" é o nome que tools/font_pipeline.py grava na face gerada —
+// a fonte de ORIGEM (hoje Roboto Mono wght 400/700) pode ser trocada por
+// Fira Code, JetBrains Mono etc. sem tocar em nenhum .slint. Os import das
+// faces vivem em screens/editor.slint (quirk de path do slint-compiler
+// 1.12: "../assets/x" resolve de screens/, "./assets/x" daqui não).
+
+export enum AppState {
+    Launcher,
+    FileManager,
+    NotesList,
+    Editor,
+    Scripts,
+    Settings,
+}
+
+export component AppWindow inherits Window {
+    width: 800px;
+    height: 480px;
+    background: Theme.background;
+    default-font-family: "PDA Mono";
+
+    in-out property <AppState> active-app: AppState.Launcher;
+
+    // ---- status bar ----
+    in property <string> status-clock: "--:--";
+    in property <string> status-store: "...";
+    in property <string> status-store-icon: "";
+    in property <string> status-pwr: "";
+    callback tick();
+
+    // ---- arquivos ----
+    in property <[string]> file-entries;
+    in property <[bool]> file-is-dir;
+    in property <[string]> file-kind;
+    in property <string> file-path: "";
+    in property <bool> fm-sheet: false;
+    in property <string> fm-sheet-name: "";
+    in property <bool> fm-sheet-isdir: false;
+    in property <bool> fm-picker: false;
+    in property <string> fm-picker-label: "";
+    in property <bool> fm-prompt: false;
+    in property <string> fm-prompt-title: "";
+    in property <string> fm-prompt-pre: "";
+    in property <string> fm-prompt-suf: "";
+    in property <bool> fm-prompt-needs-text: false;
+    callback request-dir(string);
+    callback dir-up();
+    callback fm-more(string, bool);
+    callback fm-sheet-action(string);
+    callback fm-newdir();
+    callback fm-newfile();
+    callback app-back();
+    callback fm-picker-select();
+    callback fm-prompt-ok();
+    callback fm-prompt-cancel();
+    callback fm-back();
+
+    // ---- notas ----
+    in property <[string]> notes-list;
+    callback request-notes-list();
+
+    // ---- editor ----
+    in property <string> ed-title: "";
+    in property <[string]> ed-lines;
+    in property <length> ed-offset: 0px;
+    in property <length> ed-offset-x: 0px;
+    in property <length> ed-content-w: 780px;
+    in property <bool> ed-dirty: false;
+    in property <bool> ed-can-delete: false;
+    in property <bool> ed-show-osk: false;
+    in property <bool> ed-reading: false;
+    in property <[int]> ed-line-style;
+    in property <[[MdRun]]> ed-runs;   // runs de markdown inline por linha (M4.10)
+    in property <int> ed-cursor-row: -1;
+    in property <int> ed-cursor-col: 0;
+    in property <bool> ed-cursor-on: true;
+    in property <int> ed-cursor-kind: 0;
+    in property <bool> ed-osk-shift: false;
+    in property <bool> ed-osk-mode: false;
+    in property <[string]> ed-osk-r1;
+    in property <[string]> ed-osk-r2;
+    in property <[string]> ed-osk-r3;
+    in property <bool> has-keyboard: false;
+    callback ed-drag(float, float);
+    callback ed-tap-at(float, float);
+    callback ed-osk-key(string);
+    callback ed-osk-shift-set(bool);
+    callback ed-toggle-osk();
+    callback ed-toggle-mode();
+    callback ed-save();
+    callback ed-delete();
+
+    // ---- scripts ----
+    in property <[string]> scripts-list;
+    in property <[string]> script-log;
+    callback request-scripts();
+    callback run-script(string);
+    callback clear-script-log();
+
+    // ---- config ----
+    in-out property <float> cfg-brightness: 80;
+    in-out property <float> cfg-dim-s: 30;
+    in-out property <float> cfg-off-s: 120;
+    in-out property <float> cfg-deep-s: 0;
+    in-out property <bool> cfg-wake-touch: false;
+    in-out property <string> cfg-accent: "cyan";
+    init => { Theme.accent = root.cfg-accent; }
+    changed cfg-accent => { Theme.accent = root.cfg-accent; }
+    in-out property <bool> cfg-boot-standby: false;
+    in-out property <bool> cfg-osk-auto: true;
+    in-out property <bool> cfg-light-sleep: false;
+    in property <string> cfg-store-info: "";
+    // v5.14.0: aba corrente exposta p/ harness offscreen (modo "settings"/
+    // "settings2") — antes o `tab` do SettingsScreen não era acessível.
+    in-out property <int> cfg-tab: 0;
+    callback cfg-set-cursor(string);
+    callback cfg-set-accent(string);
+    callback cfg-save();
+    callback cfg-reset();
+    callback cfg-sleep-now();
+    callback cfg-hibernate();
+
+    // ---- quick settings pulldown + gestos (M4.12) ----
+    // qs-dragging/qs-drag são `in-out` de propósito: o harness offscreen os
+    // usa para renderizar o painel aberto/meio-aberto SEM animação
+    // (duration 0ms durante o drag — o render é um frame único), e o gesto
+    // interno também escreve neles (`in` puro proibiria o assign interno).
+    in-out property <bool> qs-open: false;
+    in-out property <bool> qs-dragging: false;
+    in-out property <length> qs-drag: 0px;
+    property <length> qs-y0: 0px;
+    property <length> qs-h: 156px;   // altura do painel aberto (cabe em target-h do QuickPanel)
+    property <length> qs-cur-h: root.qs-dragging ? root.qs-drag
+                              : (root.qs-open ? root.qs-h : 0px);
+    animate qs-cur-h { duration: root.qs-dragging ? 0ms : 180ms; easing: ease-out; }
+    property <length> eg-x0: 0px;
+    property <length> eg-y0: 0px;
+    property <bool> eg-fired: false;
+    callback qs-brightness(float);
+    callback qs-state(bool);
+    changed qs-open => { root.qs-state(root.qs-open); }
+
+    // ---- política de gestos por tela (M4.13, opt-out) ----
+    // Telas que gerenciam gestos próprios declaram `false` aqui e a camada
+    // de gestos do app SAI do hit-test — o mesmo efeito que o Launcher já
+    // tem por ordem de empilhamento (a camada da tela vence).
+    // Editor (edição E leitura compartilham AppState.Editor): o arrasto na
+    // margem esquerda rola a caixa de texto; "voltar" fica no botão da
+    // toolbar. O pulldown continua global (a tira cobre só a status bar,
+    // que não tem controles), mas `qs-pull-allowed` existe para futuras
+    // telas com elementos interativos no topo. `in-out` permite que o
+    // harness/C++ forcem estados para teste.
+    // v5.14.0: Settings também opta OUT — a sidebar de abas começa em
+    // x≈8px e a tira de voltar (hit-test no TOPO por ordem de declaração)
+    // comia os cliques nas abas (relato de campo da 13ª rodada). A tela
+    // já tem botão "Voltar" próprio em todas as abas.
+    in-out property <bool> back-swipe-allowed: root.active-app != AppState.Launcher
+        && root.active-app != AppState.Editor
+        && root.active-app != AppState.Settings;
+    in-out property <bool> qs-pull-allowed: true;
+
+    // Âncora de rasterização: o software renderer pré-rasteriza apenas os
+    // caracteres presentes em literais ESTÁTICOS do .slint (o charset é
+    // GLOBAL: vale para todas as faces embutidas e todos os pixel-sizes).
+    // Sem isto, textos vindos do C++ (arquivos, notas, OSK 123) perdiam
+    // acentos, travessões e ≠≈∞ em runtime. Latin-1 suplementar +
+    // tipográficos, no mesmo font-size do editor.
+    // O "`" (crase/backtick) entra EXPLÍCITO: o set ASCII embutido no
+    // slint-compiler 1.12 (embed_glyphs.rs) cobre 0x20-0x7E MENOS o 0x60,
+    // então sem ele aqui a tecla do OSK e o `código` das notas renderizam
+    // em branco (bug relatado em 2026-09-29, M4.10).
+    Text {
+        visible: false;
+        font-size: Theme.type-body;
+        text: "`¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ–—‘’“”„…†‡•‹›€≠≈∞";
+    }
+
+    Timer {
+        interval: 1000ms;
+        running: true;
+        triggered => { root.tick(); }
+    }
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+
+    VerticalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        Rectangle {
+            height: Theme.status-h;
+            background: Theme.surface-1;
+            HorizontalLayout {
+                padding-left: Theme.sp-md;
+                padding-right: Theme.sp-md;
+                spacing: Theme.sp-lg;
+                Text { text: root.status-clock; color: Theme.primary; font-size: Theme.type-label; vertical-alignment: center; }
+                HorizontalLayout {
+                    spacing: 4px;
+                    IconForKind { kind: root.status-store-icon; size: Theme.type-label; tint: Theme.success; }
+                    Text { text: root.status-store; color: Theme.success; font-size: Theme.type-label; vertical-alignment: center; }
+                }
+                Text { text: root.status-pwr; color: Theme.on-surface-var; font-size: Theme.type-label; vertical-alignment: center;
+                       horizontal-stretch: 1; horizontal-alignment: right; }
+            }
+        }
+        Divider { }
+
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.background;
+
+            if (root.active-app == AppState.Launcher) : LauncherScreen {
+                width: 100%;
+                height: 100%;
+                open-app(app-name) => { root.open-app-dispatch(app-name); }
+            }
+            if (root.active-app == AppState.FileManager) : FileManagerScreen {
+                width: 100%;
+                height: 100%;
+                entries: root.file-entries;
+                entries-is-dir: root.file-is-dir;
+                entry-kind: root.file-kind;
+                current-path: root.file-path;
+                sheet-visible: root.fm-sheet;
+                sheet-name: root.fm-sheet-name;
+                sheet-is-dir: root.fm-sheet-isdir;
+                picker-mode: root.fm-picker;
+                picker-label: root.fm-picker-label;
+                request-dir(p) => { root.request-dir(p); }
+                open-entry(e) => { root.request-dir(e); }
+                go-up => { root.dir-up(); }
+                refresh => { root.request-dir(root.file-path); }
+                go-back => { root.fm-back(); }
+                more-tapped(n, d) => { root.fm-more(n, d); }
+                sheet-action(a) => { root.fm-sheet-action(a); }
+                new-dir => { root.fm-newdir(); }
+                new-file => { root.fm-newfile(); }
+                picker-select => { root.fm-picker-select(); }
+            }
+            if (root.active-app == AppState.NotesList) : NotesListScreen {
+                width: 100%;
+                height: 100%;
+                notes: root.notes-list;
+                go-back => { root.app-back(); }
+                open-note(n) => { root.open-note(n); }
+                new-note => { root.new-note(); }
+            }
+            if (root.active-app == AppState.Editor) : EditorScreen {
+                width: 100%;
+                height: 100%;
+                title: root.ed-title;
+                lines: root.ed-lines;
+                offset: root.ed-offset;
+                offset-x: root.ed-offset-x;
+                content-w: root.ed-content-w;
+                dirty: root.ed-dirty;
+                can-delete: root.ed-can-delete;
+                show-osk: root.ed-show-osk;
+                reading: root.ed-reading;
+                line-style: root.ed-line-style;
+                ed-runs: root.ed-runs;
+                cursor-row: root.ed-cursor-row;
+                cursor-col: root.ed-cursor-col;
+                cursor-on: root.ed-cursor-on;
+                cursor-kind: root.ed-cursor-kind;
+                osk-shift: root.ed-osk-shift;
+                osk-mode: root.ed-osk-mode;
+                osk-r1: root.ed-osk-r1;
+                osk-r2: root.ed-osk-r2;
+                osk-r3: root.ed-osk-r3;
+                drag(dx, dy) => { root.ed-drag(dx, dy); }
+                tap-at(x, y) => { root.ed-tap-at(x, y); }
+                osk-key(k) => { root.ed-osk-key(k); }
+                osk-shift-changed(s) => { root.ed-osk-shift-set(s); }
+                save => { root.ed-save(); }
+                delete-file => { root.ed-delete(); }
+                toggle-osk => { root.ed-toggle-osk(); }
+                toggle-mode => { root.ed-toggle-mode(); }
+                go-back => { root.app-back(); }
+            }
+            if (root.active-app == AppState.Scripts) : ScriptsScreen {
+                width: 100%;
+                height: 100%;
+                scripts: root.scripts-list;
+                log: root.script-log;
+                run-script(s) => { root.run-script(s); }
+                clear-log => { root.clear-script-log(); }
+                refresh => { root.request-scripts(); }
+                go-back => { root.app-back(); }
+            }
+            if (root.active-app == AppState.Settings) : SettingsScreen {
+                width: 100%;
+                height: 100%;
+                brightness <=> root.cfg-brightness;
+                dim-s <=> root.cfg-dim-s;
+                off-s <=> root.cfg-off-s;
+                deep-s <=> root.cfg-deep-s;
+                wake-touch <=> root.cfg-wake-touch;
+                boot-standby <=> root.cfg-boot-standby;
+                osk-auto <=> root.cfg-osk-auto;
+                light-sleep <=> root.cfg-light-sleep;
+                store-info: root.cfg-store-info;
+                tab <=> root.cfg-tab;
+                set-cursor(c) => { root.cfg-set-cursor(c); }
+                set-accent(a) => { root.cfg-set-accent(a); }
+                save => { root.cfg-save(); }
+                reset => { root.cfg-reset(); }
+                sleep-now => { root.cfg-sleep-now(); }
+                hibernate => { root.cfg-hibernate(); }
+                go-back => { root.app-back(); }
+            }
+        }
+    }
+
+    // ---- camada de gestos (M4.12) ----
+    // Ordem de empilhamento (Slint: último declarado = topo do hit-test):
+    //   conteúdo → tira de voltar → scrim → QuickPanel → tira do topo → prompt.
+    // O PromptOverlay tem TouchArea modal de tela cheia, então nada aqui
+    // dispara com prompt aberto (senha Wi-Fi, confirmação de save etc.).
+
+    // Voltar: arrasto da borda esquerda para a direita (>36px, dominante
+    // horizontal). Reusa os MESMOS callbacks dos botões "Voltar" — no
+    // gerenciador, fm-back() fecha folha/picker ou sobe de diretório antes
+    // de sair do app (semântica idêntica à barra).
+    // v5.14.0: tira 18px→10px (edição de campo adotada) — 18px invadia os
+    // alvos de toque próximos da borda; o gesto precisa de >36px de arrasto
+    // horizontal, então a tira fina não prejudica o swipe.
+    if root.back-swipe-allowed && !root.fm-prompt: Rectangle {
+        x: 0px;
+        y: Theme.status-h;
+        width: 10px;
+        height: root.height - Theme.status-h;
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: Theme.state-pressed;
+            opacity: egta.pressed && !root.eg-fired ? 8% : 0%;
+        }
+        egta := TouchArea {
+            width: 100%;
+            height: 100%;
+            changed pressed => {
+                if (self.pressed) {
+                    root.eg-x0 = self.mouse-x;
+                    root.eg-y0 = self.mouse-y;
+                    root.eg-fired = false;
+                }
+            }
+            moved => {
+                if (!root.eg-fired
+                    && self.mouse-x - root.eg-x0 > 36px
+                    && self.mouse-x - root.eg-x0 > Math.abs(self.mouse-y - root.eg-y0)) {
+                    root.eg-fired = true;
+                    if (root.active-app == AppState.FileManager) { root.fm-back(); }
+                    else { root.app-back(); }
+                }
+            }
+        }
+    }
+
+    // Scrim do pulldown: opacidade acompanha a altura corrente (anima junto);
+    // toque fora do painel fecha.
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        visible: root.qs-cur-h > 1px;
+        background: #000000;
+        opacity: (root.qs-cur-h / root.qs-h) * 0.4;
+        TouchArea {
+            width: 100%;
+            height: 100%;
+            clicked => {
+                root.qs-open = false;
+                root.qs-dragging = false;
+                root.qs-drag = 0px;
+            }
+        }
+    }
+
+    // Painel de ajustes rápidos (brilho vivo + config + suspender)
+    QuickPanel {
+        h: root.qs-cur-h;
+        target-h: root.qs-h;
+        brightness <=> root.cfg-brightness;
+        brightness-live(v) => { root.qs-brightness(v); }
+        open-config => { root.qs-open = false; root.open-app-dispatch("Config"); }
+        sleep-now => { root.qs-open = false; root.cfg-sleep-now(); }
+        request-close => { root.qs-open = false; }
+    }
+
+    // Tira do topo (status bar): pulldown com drag-following — arrastou
+    // >10px o painel acompanha o dedo; soltou com >1/3 da altura = abre,
+    // senão recolhe. Declarada POR CIMA do painel: com qs-open=true fica
+    // disabled e o hit-test desce para o grip do QuickPanel.
+    Rectangle {
+        y: 0px;
+        width: 100%;
+        height: Theme.status-h;
+        qta := TouchArea {
+            width: 100%;
+            height: 100%;
+            enabled: root.qs-pull-allowed && !root.qs-open;
+            changed pressed => {
+                if (self.pressed) {
+                    root.qs-y0 = self.mouse-y;
+                    root.qs-drag = 0px;
+                    root.qs-dragging = false;
+                } else if (root.qs-dragging) {
+                    root.qs-open = root.qs-drag > root.qs-h / 3;
+                    root.qs-dragging = false;
+                    root.qs-drag = 0px;
+                }
+            }
+            moved => {
+                if (root.qs-dragging) {
+                    root.qs-drag = Math.max(0px,
+                        Math.min(self.mouse-y - root.qs-y0 - 10px, root.qs-h));
+                } else if (self.pressed && self.mouse-y - root.qs-y0 > 10px) {
+                    root.qs-dragging = true;
+                }
+            }
+        }
+    }
+
+    // ---- prompt global (senha Wi-Fi, rename, novo dir/arq, confirmações) ----
+    if root.fm-prompt: PromptOverlay {
+        title: root.fm-prompt-title;
+        text-pre: root.fm-prompt-pre;
+        text-suf: root.fm-prompt-suf;
+        needs-text: root.fm-prompt-needs-text;
+        osk-shift: root.ed-osk-shift;
+        osk-mode: root.ed-osk-mode;
+        osk-r1: root.ed-osk-r1;
+        osk-r2: root.ed-osk-r2;
+        osk-r3: root.ed-osk-r3;
+        ok => { root.fm-prompt-ok(); }
+        cancel => { root.fm-prompt-cancel(); }
+        osk-key(k) => { root.ed-osk-key(k); }
+        osk-shift-changed(s2) => { root.ed-osk-shift-set(s2); }
+    }
+    }
+
+    callback open-app-dispatch(string);
+    callback open-note(string);
+    callback new-note();
+}

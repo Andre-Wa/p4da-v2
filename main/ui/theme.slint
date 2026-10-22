@@ -1,0 +1,95 @@
+// theme.slint — design tokens do PDA (Material 3 Expressive adaptado)
+//
+// Adaptações p/ tela pequena (4.3" 800x480, IPS, uso com luz ambiente):
+//  - esquema dark de alto contraste com primário cian (legibilidade);
+//  - shapes menores que o M3 de celular (xl=28 só p/ destaques);
+//  - type scale comprimida (body 16px é o piso de conforto no painel);
+//  - state layers por alpha (pressed/hover) como no M3.
+//
+// Uso: import { Theme } from "theme.slint";  ->  Theme.primary, Theme.shape-md...
+
+export global Theme {
+    // ---- superfícies ----
+    in property <color> background: #0f1219;
+    in property <color> surface: #12161f;
+    in property <color> surface-1: #1a1f2b;
+    in property <color> surface-2: #232a38;
+    in property <color> surface-3: #2c3444;
+    in property <color> on-surface: #e2e6f0;
+    in property <color> on-surface-var: #9aa4b8;
+    in property <color> outline: #333c4d;
+    in property <color> outline-var: #232833;
+
+    // ---- cor de marca (M5.0 Expressive: cor dinâmica) ----
+    // Paleta escolhida pela string `accent` (setada pelo C++ via
+    // AppWindow.cfg-accent <=> Theme.accent): ternárias por paleta,
+    // tudo estático em compile-time (Slint 1.12 não expõe globals p/ C++).
+    in-out property <string> accent: "cyan";
+    out property <color> primary: accent == "violet" ? #b49dff : accent == "green" ? #8ce99a : accent == "amber" ? #ffca7a : accent == "pink" ? #ff9ecb : #6fd3ff;
+    out property <color> on-primary: accent == "violet" ? #2a1650 : accent == "green" ? #0f3d1c : accent == "amber" ? #4a2b00 : accent == "pink" ? #4d002b : #003544;
+    out property <color> primary-container: accent == "violet" ? #4a337a : accent == "green" ? #14532d : accent == "amber" ? #6b3f00 : accent == "pink" ? #7a0045 : #004d61;
+    out property <color> on-primary-container: accent == "violet" ? #e4d8ff : accent == "green" ? #c9f5d0 : accent == "amber" ? #ffe8c8 : accent == "pink" ? #ffd9e8 : #b8eaff;
+    out property <color> secondary-container: accent == "violet" ? #443a5e : accent == "green" ? #3a4a3e : accent == "amber" ? #4a4038 : accent == "pink" ? #4a3a44 : #3a4150;
+    out property <color> on-secondary-container: accent == "violet" ? #e8ddff : accent == "green" ? #d6f5dd : accent == "amber" ? #ffe4c0 : accent == "pink" ? #ffd9f0 : #d6e4ff;
+    out property <color> tertiary: accent == "violet" ? #9fe3a0 : accent == "green" ? #ffb77d : accent == "amber" ? #7ad0ff : accent == "pink" ? #9ee4ff : #ffb77d;
+
+    // ---- semânticas ----
+    in property <color> error: #ffb4ab;
+    in property <color> error-container: #6e1b20;
+    in property <color> on-error-container: #ffd9d5;
+    in property <color> success: #9fe3a0;
+
+    // ---- state layers (M3) ----
+    // Cores OPACAS de propósito: a intensidade é dada pelo `opacity` do
+    // Rectangle de overlay no ponto de uso (padrão: 10-12%), como definido
+    // em elements/buttons.slint. Não queime alpha na cor.
+    in property <color> state-pressed: #ffffff;
+    in property <color> state-hover: #ffffff;
+
+    // ---- forma (base x1.15) ----
+    in property <length> shape-xs: 6px;
+    in property <length> shape-sm: 12px;
+    in property <length> shape-md: 18px;
+    in property <length> shape-lg: 24px;
+    in property <length> shape-xl: 40px;
+
+    // ---- tipografia (ESTÁTICA de propósito!) ----
+    // O software renderer pré-rasteriza os glifos no COMPILE para cada
+    // tamanho estático; font-size dinâmico (in-out + set em runtime) faz
+    // tudo cair num tamanho único. p/ testar outra escala de FONTE:
+    //   python3 tools/scale_type.py 1.15   &&  idf.py build
+    in property <length> type-display: 34px;
+    in property <length> type-headline: 28px;
+    in property <length> type-title: 23px;
+    in property <length> type-subtitle: 20px;
+    in property <length> type-body: 18px;
+    in property <length> type-label: 15px;
+    in property <length> type-tiny: 12px;
+
+    // ---- espaço (base x1.15) ----
+    in property <length> sp-xs: 5px;
+    in property <length> sp-sm: 9px;
+    in property <length> sp-md: 14px;
+    in property <length> sp-lg: 18px;
+    in property <length> sp-xl: 28px;
+
+    // ---- métricas de chrome ----
+    in property <length> osk-h: 226px;      // altura total do teclado virtual
+                                            // (M4.16.1: 4 fileiras ≥48px +
+                                            // spacing 6px; a fileira extra
+                                            // de números da M4.16 saiu no
+                                            // feedback de hardware)
+    in property <length> key-fsize: 17px;    // fonte das teclas (estática)
+    in property <length> status-h: 34px;
+    in property <length> btn-h: 44px;
+    in property <length> btn-h-sm: 39px;
+    // v5.14.0: padding horizontal dos botões de texto. Com o texto dentro
+    // de um HorizontalLayout com este padding, o botão ganha largura
+    // intrínseca (preferred/min) = texto + 2*btn-px — rótulo nunca mais
+    // é cortado por `width:` fixo curto (relato de campo v5.13.0:
+    // "violeta"/"traço" @ 76px). Largura fixa continua válida como
+    // MÍNIMO visual quando maior que a intrínseca.
+    in property <length> btn-px: 13px;
+    in property <length> row-h: 48px;
+    in property <length> line-h: 28px;   // editor (espelha main.cpp ED_LINE_H)
+}

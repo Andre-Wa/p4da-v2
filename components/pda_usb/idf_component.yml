@@ -1,0 +1,9 @@
+## pda_usb — dependências gerenciadas
+dependencies:
+  idf:
+    version: ">=5.3,<6.0"
+
+  # Driver USB Host HID (teclado). Na L3 entra aqui também:
+  #   espressif/usb_host_uac: "==1.5.0"   (UAC1 only — ver docs/DEPENDENCIAS.md)
+  espressif/usb_host_hid:
+    version: "==1.2.1"

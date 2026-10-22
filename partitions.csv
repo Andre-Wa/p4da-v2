@@ -1,0 +1,15 @@
+# Name,   Type, SubType, Offset,  Size,     Flags
+# Flash 16 MB: app "factory" 6 MB + LittleFS "storage" 8 MB com offset
+# automático (~1,9 MB livres no fim — reserva p/ assets ou slot OTA futuro).
+#
+# Herdado da v1 (M4.7): o binário com fontes embutidas + -O2 chegou a
+# ~4,07 MiB; 6 MB dá folga. Se um dia estourar: -Os ou factory 7M.
+#
+# Nota: o subtype da partição "storage" aparece como "spiffs" (0x82) mas o
+# conteúdo é LittleFS — o mount é por LABEL e funciona; renomear o rótulo
+# exigiria reflash completo com perda do espelho interno (ver
+# docs/ARCHITECTURE.md §Armazenamento). Decisão v1 mantida.
+nvs,      data, nvs,     0x9000,  0x6000,
+phy_init, data, phy,     0xf000,  0x1000,
+factory,  app,  factory, 0x10000, 6M,
+storage,  data, spiffs,  ,        8M,

@@ -1,0 +1,26 @@
+## pda_board — dependências gerenciadas (BSP)
+#
+# PINNED de propósito (==): o conjunto abaixo é o que compilou/validou
+# contra ESP-IDF v5.5.1 na v1. Ranges (^) deixam o resolve saltar de
+# minor sem aviso — foi assim que Lua 5.5 e Slint 1.18 entraram e
+# quebraram o build nas primeiras rodadas da v1. Ao atualizar qualquer
+# um, atualize docs/DEPENDENCIAS.md.
+dependencies:
+  idf:
+    version: ">=5.3,<6.0"   # IDF 6.x recusa P4 rev <3.1 (chip ES) — docs/HARDWARE.md
+
+  # Driver do painel ST7701S via MIPI-DSI (série 1.x; a 2.x exige IDF 6.0+).
+  espressif/esp_lcd_st7701:
+    version: "==1.1.5"
+
+  # Driver do touch GT911 (I2C).
+  espressif/esp_lcd_touch_gt911:
+    version: "==1.2.1"
+
+  # Base do touch (transitiva do gt911 e do Slint); pinada p/ congelar.
+  espressif/esp_lcd_touch:
+    version: "==1.2.1"
+
+  # Sistema de arquivos interno (partição "storage").
+  joltwallet/littlefs:
+    version: "==1.22.3"

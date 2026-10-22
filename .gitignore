@@ -1,0 +1,15 @@
+.cache
+.vscode
+build
+managed_components
+dependencies.lock
+sdkconfig
+sdkconfig.old
+.clangd
+-l
+.test
+# core dumps de ferramentas host (gdb do panic decoder etc.)
+core
+core.*
+# renders offscreen ficam em docs/img/ (versionados de propósito)
+docs/img/

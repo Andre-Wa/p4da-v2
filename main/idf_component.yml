@@ -1,0 +1,18 @@
+## main (camada app) — dependências gerenciadas
+dependencies:
+  idf:
+    version: ">=5.3,<6.0"   # IDF 6.x recusa P4 rev <3.1 (chip ES) — docs/HARDWARE.md
+
+  # UI toolkit (prebuilt riscv32 p/ ESP-IDF).
+  # PINNADO em 1.12.1 de propósito: o prebuilt 1.18.1 embute glifos de
+  # fonte ~20x maiores (31,8 MiB de .rodata num app de ~3 MiB) e estoura
+  # o flash de 16 MB. Ver docs/DEPENDENCIAS.md ("Regressão do Slint 1.18").
+  slint/slint:
+    version: "==1.12.1"
+
+  # L2 (Wi-Fi/NTP) acrescentará aqui, como na v1:
+  #   espressif/esp_hosted:      "==2.12.9"  (rules: target in [esp32p4])
+  #   espressif/esp_wifi_remote: ">=1.3.1"   (rules: target in [esp32p4])
+  # L3 (áudio) acrescentará em components/pda_usb (ou pda_audio):
+  #   espressif/usb_host_uac:    "==1.5.0"
+  #   espressif/esp_codec_dev:   "==1.6.2"

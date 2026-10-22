@@ -1,0 +1,63 @@
+# sdkconfig.defaults — p4da-v2 (L1 fundação)
+#
+# Conjunto validado na v1 contra ESP-IDF v5.5.1. As linhas de rede
+# (ESP-Hosted/SNTP) foram REMOVIDAS nesta fundação e voltam na camada L2
+# (ver docs/MIGRATION.md) — sem o componente esp_hosted no build, as
+# opções não existem e seriam ignoradas com warning.
+
+# --- Target ---
+CONFIG_IDF_TARGET="esp32p4"
+
+# --- PSRAM (32MB HEX) ---
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+# Renomeado no IDF 5.5 (era CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY).
+CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y
+
+# --- Banda/perf p/ MIPI-DSI ---
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+CONFIG_CACHE_L2_CACHE_256KB=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# --- Flash (16MB) + partições ---
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# --- SD card (nomes longos + UTF-8 p/ acentos) ---
+# Nota: no IDF 5.5 "FATFS_LONG_FILENAMES" virou choice; o membro válido é
+# FATFS_LFN_HEAP. A linha antiga era ignorada com warning no configure.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_API_ENCODING_UTF_8=y
+
+# --- USB-OTG (host p/ teclado; L3 reusa p/ áudio) ---
+# 1024 (default era 256): teclado funciona com 256, mas devices de áudio
+# compostos (UAC, camada L3) têm config descriptor maior e morriam em
+# CHECK_SHORT_CONFIG_DESC (achado v1 M5a.1.1). Deixamos pronto desde já;
+# custo = 1 KB de buffer de control transfer.
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
+CONFIG_USB_OTG_SUPPORTED=y
+
+# --- LCD ---
+CONFIG_LCD_ENABLE_DEBUG_LOG=n
+
+# --- FreeRTOS / tarefas ---
+CONFIG_FREERTOS_HZ=1000
+# A task main só faz o bring-up: o event loop/layout do Slint mora na
+# task ui_loop (pilha 32K em PSRAM, ver main/app_main.cpp). 8K internos
+# bastam (herança v1: aliviava o boot com ESP-Hosted; sem hosted na L1 a
+# folga é ainda maior).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
+
+# --- Power management (standby/light sleep — ver docs/POWER.md) ---
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+
+# --- C++ (Slint) ---
+CONFIG_COMPILER_CXX_EXCEPTIONS=y
+CONFIG_COMPILER_CXX_RTTI=y

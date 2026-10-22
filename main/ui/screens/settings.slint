@@ -1,0 +1,203 @@
+// screens/settings.slint — Configurações em abas c/ barra lateral de ícones
+// (M4.5: resolve o overflow da tela única; M3: sidebar tonal + switches)
+//
+// v2/L1: 4 abas — Tela(0) Sistema(1) Entrada(2) Sobre(3). A aba Redes e as
+// linhas de bateria/som da v1 voltam nas camadas L2/L3/L4 (docs/MIGRATION.md).
+import { Slider, Switch } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { FilledButton, TonalButton, DangerButton, GhostButton } from "../elements/buttons.slint";
+import { Surface, ScreenTitle } from "../elements/surfaces.slint";
+
+component TabBtn inherits Rectangle {
+    in property <bool> selected;
+    in property <string> icon;
+    callback clicked;
+    height: 56px;
+    border-radius: Theme.shape-md;
+    background: root.selected ? Theme.surface-3 : transparent;
+    clip: true;
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.icon;
+        font-family: "Material Icons";
+        font-size: 24px;
+        color: root.selected ? Theme.primary : Theme.on-surface-var;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.state-pressed;
+        opacity: 10%;
+        visible: ta.pressed;
+    }
+    ta := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+component SwitchRow inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <bool> value;
+    alignment: start;
+    spacing: Theme.sp-sm;
+    Text {
+        text: root.label;
+        color: Theme.on-surface;
+        font-size: Theme.type-body;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+        wrap: word-wrap;
+    }
+    Switch {
+        checked <=> root.value;
+    }
+}
+
+export component SettingsScreen inherits Rectangle {
+    in-out property <float> brightness: 80;
+    in-out property <float> dim-s: 30;
+    in-out property <float> off-s: 120;
+    in-out property <float> deep-s: 0;
+    in-out property <bool> wake-touch: false;
+    in-out property <bool> boot-standby: false;
+    in-out property <bool> osk-auto: true;
+    in-out property <bool> light-sleep: false;
+    in property <string> store-info;
+    in-out property <int> tab: 0;
+    callback save();
+    callback reset();
+    callback sleep-now();
+    callback hibernate();
+    callback set-cursor(string);
+    callback set-accent(string);
+    callback go-back();
+
+    HorizontalLayout {
+        spacing: 0px;
+
+        // ---- sidebar ----
+        Rectangle {
+            width: 76px;
+            background: Theme.surface-1;
+            VerticalLayout {
+                padding: Theme.sp-sm;
+                spacing: Theme.sp-sm;
+                TabBtn { icon: ""; selected: root.tab == 0; clicked => { root.tab = 0; } }
+                TabBtn { icon: ""; selected: root.tab == 1; clicked => { root.tab = 1; } }
+                TabBtn { icon: ""; selected: root.tab == 2; clicked => { root.tab = 2; } }
+                TabBtn { icon: ""; selected: root.tab == 3; clicked => { root.tab = 3; } }
+            }
+        }
+
+        // ---- conteúdo ----
+        VerticalLayout {
+            padding: Theme.sp-lg;
+            spacing: Theme.sp-md;
+            horizontal-stretch: 1;
+
+            HorizontalLayout {
+                spacing: Theme.sp-sm;
+                ScreenTitle {
+                    label: root.tab == 0 ? "Tela"
+                         : root.tab == 1 ? "Sistema"
+                         : root.tab == 2 ? "Entrada"
+                         : "Sobre";
+                    horizontal-stretch: 1;
+                }
+                FilledButton { width: 100px; text: "Salvar"; fsize: Theme.type-label; clicked => { root.save(); } }
+                GhostButton { width: 90px; text: "Voltar"; fsize: Theme.type-label; clicked => { root.go-back(); } }
+            }
+
+            if root.tab == 0: VerticalLayout {
+                spacing: Theme.sp-md;
+                GridLayout {
+                    spacing: Theme.sp-sm;
+                    Row {
+                        Text { text: "Brilho: " + Math.round(root.brightness); color: Theme.on-surface; font-size: Theme.type-body; vertical-alignment: center; }
+                        Slider { minimum: 1; maximum: 100; value <=> root.brightness; horizontal-stretch: 1; step: 1; }
+                    }
+                    Row {
+                        Text { text: "Dimerizar após (s): " + Math.round(root.dim-s); color: Theme.on-surface; font-size: Theme.type-body; vertical-alignment: center; }
+                        Slider { minimum: 5; maximum: 600; value <=> root.dim-s; horizontal-stretch: 1; step: 5; }
+                    }
+                    Row {
+                        Text { text: "Standby após (s): " + Math.round(root.off-s); color: Theme.on-surface; font-size: Theme.type-body; vertical-alignment: center; }
+                        Slider { minimum: 10; maximum: 1800; value <=> root.off-s; horizontal-stretch: 1; step: 5; }
+                    }
+                }
+            }
+
+            if root.tab == 1: VerticalLayout {
+                // v5.14.0 (edição de campo adotada): sem `width:` fixo —
+                // filho de VerticalLayout estica à largura da coluna.
+                spacing: Theme.sp-md;
+                GridLayout {
+                    spacing: Theme.sp-sm;
+                    Row {
+                        Text { text: "Hibernar após (s, 0=off): " + Math.round(root.deep-s); color: Theme.on-surface; font-size: Theme.type-body; vertical-alignment: center; }
+                        Slider { minimum: 0; maximum: 7200; value <=> root.deep-s; horizontal-stretch: 1; step: 10; }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Theme.sp-sm;
+                    // v5.14.0: stretch igual p/ a linha preencher a largura
+                    // da tela (antes os botões paravam no meio da coluna).
+                    TonalButton { horizontal-stretch: 1; text: "Dormir agora"; clicked => { root.sleep-now(); } }
+                    DangerButton { horizontal-stretch: 1; text: "Hibernar"; clicked => { root.hibernate(); } }
+                    GhostButton { horizontal-stretch: 1; text: "Padrão"; clicked => { root.reset(); } }
+                }
+                Text { text: "Armazenamento: " + root.store-info; color: Theme.on-surface-var; font-size: Theme.type-label; }
+                Text {
+                    text: "Hibernar = desligar com sessão restaurada no próximo boot.";
+                    font-size: Theme.type-tiny;
+                    color: Theme.on-surface-var;
+                    wrap: word-wrap;
+                }
+            }
+
+            if root.tab == 2: VerticalLayout {
+                spacing: Theme.sp-md;
+                SwitchRow { label: "Teclado virtual só sem USB"; value <=> root.osk-auto; }
+                SwitchRow { label: "Toque acorda do STANDBY (INT GT911)"; value <=> root.wake-touch; }
+                SwitchRow { label: "Botão BOOT entra em STANDBY (toggle)"; value <=> root.boot-standby; }
+                SwitchRow { label: "Light sleep no standby (exp.: quebra SD/Wi-Fi/USB no wake)"; value <=> root.light-sleep; }
+                HorizontalLayout {
+                    spacing: Theme.sp-sm;
+                    Text { text: "Cursor do editor:"; color: Theme.on-surface; font-size: Theme.type-body; vertical-alignment: center; }
+                    // Rótulos em palavra (M4.8): "■" não existe na Roboto
+                    // Mono (default da UI) — nada de glifo fora do charset.
+                    // v5.14.0: SEM width fixo (o usuário tentou 76→80px em
+                    // campo; a causa raiz era a falta de largura intrínseca
+                    // do botão — buttons.slint agora deriva min do rótulo).
+                    // Stretch igual → a linha preenche a largura da tela.
+                    GhostButton { horizontal-stretch: 1; fsize: Theme.type-label; text: "barra"; clicked => { root.set-cursor("bar"); } }
+                    GhostButton { horizontal-stretch: 1; fsize: Theme.type-label; text: "traço"; clicked => { root.set-cursor("under"); } }
+                    GhostButton { horizontal-stretch: 1; fsize: Theme.type-label; text: "bloco"; clicked => { root.set-cursor("block"); } }
+                }
+                HorizontalLayout {
+                    spacing: Theme.sp-sm;
+                    Text { text: "Acento:"; color: Theme.on-surface; font-size: Theme.type-body; vertical-alignment: center; }
+                    GhostButton { horizontal-stretch: 1; fsize: Theme.type-label; text: "ciano"; clicked => { root.set-accent("cyan"); } }
+                    GhostButton { horizontal-stretch: 1; fsize: Theme.type-label; text: "violeta"; clicked => { root.set-accent("violet"); } }
+                    GhostButton { horizontal-stretch: 1; fsize: Theme.type-label; text: "verde"; clicked => { root.set-accent("green"); } }
+                    GhostButton { horizontal-stretch: 1; fsize: Theme.type-label; text: "âmbar"; clicked => { root.set-accent("amber"); } }
+                    GhostButton { horizontal-stretch: 1; fsize: Theme.type-label; text: "rosa"; clicked => { root.set-accent("pink"); } }
+                }
+            }
+
+            if root.tab == 3: VerticalLayout {
+                spacing: Theme.sp-sm;
+                Text { text: "PDA p4da — v2.0.0 (L1 fundação)"; color: Theme.on-surface; font-size: Theme.type-title; font-weight: 700; }
+                Text { text: "Placa: GUITION JC4880P443C_I_W (ESP32-P4 + C6)"; color: Theme.on-surface-var; font-size: Theme.type-label; }
+                Text { text: "IDF 5.5.x · Slint 1.12.1 · Lua 5.5"; color: Theme.on-surface-var; font-size: Theme.type-label; }
+                Text { text: "Ícones: Material Icons (Apache-2.0) · Fonte: PDA Mono 400/700 (Apache-2.0)"; color: Theme.on-surface-var; font-size: Theme.type-label; wrap: word-wrap; }
+                Text { text: "Docs: docs/ROADMAP.md · docs/ARCHITECTURE.md"; color: Theme.on-surface-var; font-size: Theme.type-label; }
+            }
+        }
+    }
+}

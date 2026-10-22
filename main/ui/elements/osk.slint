@@ -1,0 +1,125 @@
+// elements/osk.slint — teclado virtual (layout "telefone": 3 fileiras de
+// letras + tecla de modo abaixo do SHIFT para números/símbolos)
+//
+// Camadas (espelham o teclado USB do repo, keyboard/key_mapping.md):
+//   mode=abc  + shift off/on : letras minúsculas / MAIÚSCULAS
+//   mode=123  + shift off    : números + símbolos (camada Lower)
+//   mode=123  + shift on     : símbolos alternativos (camada Raise adaptada)
+import { Theme } from "../theme.slint";
+import { KeyCap } from "buttons.slint";
+
+export component OnScreenKeyboard inherits Rectangle {
+    in property <[string]> r1;
+    in property <[string]> r2;
+    in property <[string]> r3;
+    in property <bool> shift;
+    in property <bool> mode;     // false = abc, true = 123/símbolos
+    in property <bool> allow-hide: true;  // false em prompts (o prompt já tem OK/Cancelar)
+    callback key(string);        // char imprimível ou token: BACKSPACE/ENTER/
+                                 // SPACE/LEFT/RIGHT/UP/DOWN/HOME/END/DEL/MODE/HIDE
+    callback shift-changed(bool);
+    callback key-down(string);
+    callback key-up(string);
+
+    // M4.16.1 (sugestão do usuário): repetição ao segurar — 400 ms de
+    // delay e depois a cada 90 ms enquanto segurando. Só BACKSPACE,
+    // setas e SPACE repetem (imprimíveis ficam sem repetição p/ não
+    // encher o texto num toque distraído).
+    property <string> rep-code: "";
+    rep-delay := Timer {
+        interval: 400ms;
+        running: false;
+        triggered => { root.key(root.rep-code); rep-delay.running = false; rep-tick.running = true; }
+    }
+    rep-tick := Timer {
+        interval: 90ms;
+        running: false;
+        triggered => { root.key(root.rep-code); }
+    }
+    key-down(c) => { root.rep-code = c; rep-tick.running = false; rep-delay.running = true; }
+    key-up(c) => { rep-delay.running = false; rep-tick.running = false; }
+
+    background: Theme.surface-1;
+    border-width: 1px;
+    border-color: Theme.outline-var;
+    border-radius: Theme.shape-md;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+
+        // M4.16.1: a fileira de números fixa da M4.16 foi REMOVIDA no
+        // feedback de hardware (cobria tela demais no editor); dígitos
+        // seguem no modo 123. As 4 fileiras mantêm os alvos ≥48 px e o
+        // spacing de 6 px da M4.16, que foram aprovados.
+        HorizontalLayout {
+            spacing: 6px;
+            vertical-stretch: 1;
+            for c in root.r1: KeyCap {
+                horizontal-stretch: 1;
+                label: c;
+                code: c;
+                hit(k) => { root.key(k); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            vertical-stretch: 1;
+            for c in root.r2: KeyCap {
+                horizontal-stretch: 1;
+                label: c;
+                code: c;
+                hit(k) => { root.key(k); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            vertical-stretch: 1;
+            KeyCap {
+                width: 76px;
+                label: root.shift ? "SHIFT*" : "SHIFT";
+                code: "SHIFT";
+                tint: Theme.surface-3;
+                fg: Theme.primary;
+                hit(k) => { root.shift-changed(!root.shift); }
+            }
+            for c in root.r3: KeyCap {
+                horizontal-stretch: 1;
+                label: c;
+                code: c;
+                hit(k) => { root.key(k); }
+            }
+            KeyCap {
+                width: 76px;
+                label: "<-";
+                code: "BACKSPACE";
+                fire-on-down: true;
+                tint: Theme.error-container;
+                fg: Theme.on-error-container;
+                hit(k) => { root.key(k); }
+                down(c) => { root.key-down(c); }
+                up(c) => { root.key-up(c); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            vertical-stretch: 1;
+            // tecla de modo ABAIXO do SHIFT (como teclado de telefone)
+            KeyCap {
+                width: 76px;
+                label: root.mode ? "abc" : "123";
+                code: "MODE";
+                tint: Theme.surface-3;
+                fg: Theme.primary;
+                hit(k) => { root.key(k); }
+            }
+            KeyCap { width: 56px; label: "<"; code: "LEFT"; fire-on-down: true;  tint: Theme.surface-3; hit(k) => { root.key(k); } down(c) => { root.key-down(c); } up(c) => { root.key-up(c); } }
+            KeyCap { width: 56px; label: ">"; code: "RIGHT"; fire-on-down: true; tint: Theme.surface-3; hit(k) => { root.key(k); } down(c) => { root.key-down(c); } up(c) => { root.key-up(c); } }
+            KeyCap { width: 56px; label: "^"; code: "UP"; fire-on-down: true;    tint: Theme.surface-3; hit(k) => { root.key(k); } down(c) => { root.key-down(c); } up(c) => { root.key-up(c); } }
+            KeyCap { width: 56px; label: "v"; code: "DOWN"; fire-on-down: true;  tint: Theme.surface-3; hit(k) => { root.key(k); } down(c) => { root.key-down(c); } up(c) => { root.key-up(c); } }
+            KeyCap { horizontal-stretch: 1; label: "espaco"; code: "SPACE"; fire-on-down: true; hit(k) => { root.key(k); } down(c) => { root.key-down(c); } up(c) => { root.key-up(c); } }
+            KeyCap { width: 84px; label: "enter"; code: "ENTER"; tint: Theme.primary-container; fg: Theme.on-primary-container; hit(k) => { root.key(k); } }
+            if root.allow-hide: KeyCap { width: 56px; label: "ok"; code: "HIDE"; tint: Theme.surface-3; fg: Theme.on-surface-var; hit(k) => { root.key(k); } }
+        }
+    }
+}

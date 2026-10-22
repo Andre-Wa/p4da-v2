@@ -1,0 +1,128 @@
+// elements/prompt.slint — overlay global de prompt/confirmacao + OSK
+// (M4.5: antes vivia dentro de files.slint e por isso nao aparecia na
+//  tela de Redes — o prompt de senha "sumia" e reaparecia em Arquivos.)
+import { Theme } from "../theme.slint";
+import { FilledButton, GhostButton } from "../elements/buttons.slint";
+import { OnScreenKeyboard } from "../elements/osk.slint";
+
+export component PromptOverlay inherits Rectangle {
+    in property <string> title;
+    // Campo de texto com cursor real (M4.8): o C++ manda o texto partido
+    // em pré/pós-cursor — o caret é o Rectangle de 2px entre os dois.
+    in property <string> text-pre;
+    in property <string> text-suf;
+    in property <bool> needs-text;
+    in property <bool> osk-shift;
+    in property <bool> osk-mode;
+    in property <[string]> osk-r1;
+    in property <[string]> osk-r2;
+    in property <[string]> osk-r3;
+    callback ok();
+    callback cancel();
+    callback osk-key(string);
+    callback osk-shift-changed(bool);
+
+    width: 100%;
+    height: 100%;
+    background: #99000000;
+
+    /* Bloqueador modal: consome toques fora do painel (sem ele o toque
+     * ATRAVESSA para a tela de baixo — reporte 2026-09-28). Cancelar só
+     * pelo botão Cancelar. */
+    TouchArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    Rectangle {
+        x: Theme.sp-lg;
+        y: root.needs-text ? 40px : (parent.height - 110px) / 2;
+        width: parent.width - Theme.sp-lg * 2;
+        // M4.16.2: 156 px com texto (título+campo+botões absolutos),
+        // 110 px sem (título+botões); fim em 196/225, acima do OSK (250).
+        height: root.needs-text ? 156px : 110px;
+        background: Theme.surface-2;
+        border-radius: Theme.shape-lg;
+        border-width: 1px;
+        border-color: Theme.outline;
+
+        VerticalLayout {
+            padding: Theme.sp-md;
+            spacing: Theme.sp-sm;
+            Text {
+                text: root.title;
+                font-size: Theme.type-body;
+                color: Theme.on-surface;
+                wrap: word-wrap;
+            }
+            if root.needs-text: Rectangle {
+                height: 44px;
+                background: Theme.surface-1;
+                border-radius: Theme.shape-sm;
+                border-width: 1px;
+                border-color: Theme.primary;
+                clip: true;
+                HorizontalLayout {
+                    padding-left: Theme.sp-sm;
+                    padding-right: Theme.sp-sm;
+                    spacing: 0px;
+                    Text {
+                        text: root.text-pre;
+                        font-family: "PDA Mono";
+                        font-size: Theme.type-body;
+                        color: Theme.on-surface;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        width: 3px;
+                        height: 100%;
+                        Rectangle {
+                            x: 0px;
+                            y: (parent.height - 24px) / 2;
+                            width: 2px;
+                            height: 24px;
+                            background: Theme.primary;
+                        }
+                    }
+                    Text {
+                        text: root.text-suf;
+                        font-family: "PDA Mono";
+                        font-size: Theme.type-body;
+                        color: Theme.on-surface;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+        /* M4.16.2: botões em geometria ABSOLUTA dentro do diálogo:
+           o VerticalLayout do Slint 1.12 misplaced esta fileira
+           p/ baixo do OSK quando ela vinha depois do campo
+           (provado por render offscreen: row no topo renderiza,
+           row após o campo não). x/y/w/h explícitos = imune. */
+        HorizontalLayout {
+            x: Theme.sp-md;
+            y: parent.height - Theme.btn-h - Theme.sp-md;
+            width: parent.width - Theme.sp-md * 2;
+            height: Theme.btn-h;
+            spacing: Theme.sp-sm;
+            FilledButton { horizontal-stretch: 1; text: "OK"; clicked => { root.ok(); } }
+            GhostButton { horizontal-stretch: 1; text: "Cancelar"; clicked => { root.cancel(); } }
+        }
+    }
+
+    if root.needs-text: OnScreenKeyboard {
+        y: parent.height - Theme.osk-h - 4px;
+        width: 100%;
+        height: Theme.osk-h;
+        r1: root.osk-r1;
+        r2: root.osk-r2;
+        r3: root.osk-r3;
+        shift: root.osk-shift;
+        mode: root.osk-mode;
+        allow-hide: false;
+        key(k) => { root.osk-key(k); }
+        shift-changed(s) => { root.osk-shift-changed(s); }
+    }
+}
