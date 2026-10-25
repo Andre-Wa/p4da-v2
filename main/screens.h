@@ -103,6 +103,15 @@ void net_start_scan(void);      /* launcher/quick panel/rescan */
 extern std::string g_wifi_pick_ssid;  /* SSID aguardando senha no prompt */
 
 /* ================================================================== */
+/* MÚSICA (screen_music.cpp) — camada L3                               */
+/* ================================================================== */
+void music_wire(AppWindow &ui);
+void music_open(void);          /* lista + navega p/ Music */
+void refresh_music_list(void);
+void push_mus_ui(void);         /* refresh de estado p/ callbacks de driver */
+void music_on_media_key(int act);
+
+/* ================================================================== */
 /* LAUNCHER (screen_launcher.cpp)                                      */
 /* ================================================================== */
 void launcher_wire(AppWindow &ui);

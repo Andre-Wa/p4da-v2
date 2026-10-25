@@ -6,10 +6,8 @@
  * passa por ui_post(). Setas/Home/End/Delete pelo keycode HID; ASCII
  * pelo mapa US do driver (backspace/tab incluídos).
  *
- * v2/L1: o callback de MEDIA KEYS (consumer control) não é registrado —
- * usb_hid_keyboard_set_media_cb() volta a ser chamado na camada L3
- * (player de música). Teclas de mídia de teclados completos são
- * simplesmente ignoradas nesta fundação.
+ * v2.2.0 (L3): media keys de consumer control registradas — despacham
+ * p/ music_on_media_key() (backend que toca: UAC ou falante local).
  *
  * Limpeza v2: a flag g_hid_seen da v1 (set-only desde o M2 — nenhuma
  * leitura) não veio junto.
@@ -53,5 +51,12 @@ void input_usb_init(void)
             g_ui->set_has_keyboard(connected);
             if (g_ui->get_active_app() == AppState::Editor) ed_push_ui(false);
         });
+    });
+
+    /* M5a.2 (v1) / L3 (v2): media keys do consumer control (H3S e
+     * teclados completos) -> player. Callback roda em task do HID:
+     * hop p/ UI via ui_post (regra 5 de ARCHITECTURE). */
+    usb_hid_keyboard_set_media_cb([](int act) {
+        ui_post([act]() { music_on_media_key(act); });
     });
 }

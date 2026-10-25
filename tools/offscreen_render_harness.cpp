@@ -1,7 +1,6 @@
 // Harness: renderiza telas do p4da-v2 offscreen com o software renderer do
 // Slint 1.12.1 (mesmo backend do ESP) para validar estilos/cursor em pixel.
-// v2.1.0 (L2): modo networks de volta; panel 192px (linha de rede no
-// quick_panel); modo music segue para a L3; launcher acrescentado na L1.
+// v2.2.0 (L3): modo music de volta (falante local + UAC + rota SOM.2).
 #include <slint-platform.h>
 #include <memory>
 #include <vector>
@@ -143,6 +142,21 @@ int main(int argc, char **argv)
         ui->set_net_infos(mk({"-42 dBm", "-71 dBm", "-88 dBm", "-55 dBm"}));
         ui->set_net_locked(mb({false, true, true, false}));
         ui->set_net_current(slint::SharedString(""));
+        lines = { "", "", "" };
+        styles = { 9, 9, 9 };
+    } else if (mode == "music") {
+        /* L3: tela Música com amostra (lista + rota + estado) */
+        ui->set_active_app(AppState::Music);
+        auto mk = [](std::vector<std::string> v) {
+            auto m = std::make_shared<slint::VectorModel<slint::SharedString>>();
+            for (auto &x : v) m->push_back(slint::SharedString(x));
+            return m;
+        };
+        ui->set_mus_tracks(mk({"abertura.wav", "trilha_02.wav", "vocal_44k1.wav"}));
+        ui->set_mus_dev(slint::SharedString("auto — FiiO DAC"));
+        ui->set_mus_state(slint::SharedString("tocando"));
+        ui->set_mus_track(slint::SharedString("trilha_02.wav"));
+        ui->set_mus_route(slint::SharedString("auto"));
         lines = { "", "", "" };
         styles = { 9, 9, 9 };
     } else if (mode == "settings" || mode == "settings2") {

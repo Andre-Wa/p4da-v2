@@ -4,7 +4,7 @@ Cada camada fecha com critério de aceite testável no hardware e com a
 suíte de host verde. Nada de L(n+1) começa com pendência de L(n)
 (disciplina herdada da v1, onde funcionou por 57 commits).
 
-## L1 — Fundação (ESTE release, v2.0.0)
+## L1 — Fundação (v2.0.0) — ✅ ACEITA EM HARDWARE 2026-10-23
 
 - [x] BSP reconciliado (display/touch/storage) como componente isolado
 - [x] Config + scripts Lua protegidos como componente (ABI 32-bit guardada)
@@ -13,30 +13,29 @@ suíte de host verde. Nada de L(n+1) começa com pendência de L(n)
 - [x] Teclado USB HID; status bar; quick panel; tema M3 + acentos
 - [x] Camada app modular (1 tela = 1 módulo) + composition root
 - [x] Suíte de host: cfg/uigate/lua-bind/md/syntaxcheck/render offscreen
-- **Aceite (1ª rodada de placa — checklist em docs/BUILD_LOG.md §final):**
-  boot com/sem cartão; standby idle+manual com wake por botão; hibernar
-  e restaurar nota; editar via OSK e via USB; scripts exemplo+logger;
-  ops de arquivo; pulldown de brilho; gestos (voltar/opt-out do editor).
+- **Aceite:** ✅ 2026-10-23 (checklist Parte A completo; serial em
+  docs/BUILD_LOG.md §Rodada de validação).
 
-## L2 — Conectividade (Wi-Fi + NTP via C6) — código em v2.1.0, aceite em HW pendente
+## L2 — Conectividade (Wi-Fi + NTP via C6) — ✅ ACEITA EM HARDWARE 2026-10-23 (v2.1.1; B10 seed de relógio FECHADO 2026-10-24: com rádio off, `os.date()` no Lua devolveu 2026-10-24 21:00:05 BRT / epoch 1792886405 (= mesmo instante em UTC) — seed do NVS confirmado; status bar em uptime até sync é decisão de projeto)
 
 - [x] `components/pda_net` (wifi_net da v1: scan-driven, multi-redes,
       reason por nome, backoff) + tela Redes + chave de rádio na Config
 - [ ] NTP + relógio real na status bar (seed de RTC via NVS no boot)
 - [ ] QuickPanel com linha de rede + atalho Redes
 - [ ] Host tests: parser de wifi.lua + máquina de reconexão (stub de evento)
-- **Aceite:** conecta em rede salva no boot; AP que some e volta reconecta
-  sem re-salvar (incidente da 14ª rodada da v1); scan com rádio off avisa.
+- **Aceite:** ✅ 2026-10-23 (checklist Parte B, B1–B9+B11; B10 seed de
+  relógio com procedimento entregue ao usuário, reporte pendente).
 
-## L3 — Áudio
+## L3 — Áudio — código em v2.2.0, aceite em HW pendente
 
-- [ ] `components/pda_audio`: SOM.1 player WAV no falante local (I2S/
+- [x] `components/pda_audio`: SOM.1 player WAV no falante local (I2S/
       ES8311) com `wav_parse.[ch]` compartilhado + testes de host com
       WAVs sintéticos (fmt estendido, chunks ímpares, LIST/FACT)
-- [ ] SOM.2 roteamento interno|UAC|auto · SOM.3 volume local
-- [ ] Tela Música + media keys HID → player + sessão "music"
-- **Aceite:** WAV 44k1 e 48k no falante e no fone UAC1; pause/resume com
-  posição; beep não empilha com música (mutex + handshake).
+- [x] SOM.2 roteamento interno|UAC|auto (RAM-only; persistência = SOM.6)
+      · SOM.3 volume local no codec + mute
+- [x] Tela Música (rota na tela) + media keys HID → player + sessão "music"
+- [~] Aceite: pendente de hardware (checklist da release v2.2.0) — WAV
+      44k1/48k no falante e no UAC1; pause/resume; beep×música; rota.
 
 ## L4 — Bateria
 

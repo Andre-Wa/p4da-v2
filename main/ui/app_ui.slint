@@ -6,8 +6,8 @@
 // screens/*.slint e os tokens em theme.slint — mexa lá sem tocar aqui
 // (e vice-versa).
 //
-// v2.1.0 (L2): tela Redes + indicador Wi-Fi de volta. Música/bateria
-// seguem para L3/L4 (mapa em docs/MIGRATION.md).
+// v2.2.0 (L3): tela Música de volta (falante local + UAC + rota SOM.2).
+// Bateria segue para L4 (mapa em docs/MIGRATION.md).
 import { Theme } from "theme.slint";
 import { Divider } from "elements/surfaces.slint";
 import { IconForKind } from "elements/icons.slint";
@@ -19,6 +19,7 @@ import { NotesListScreen } from "screens/notes.slint";
 import { EditorScreen, MdRun } from "screens/editor.slint";
 import { ScriptsScreen } from "screens/scripts.slint";
 import { NetworksScreen } from "screens/networks.slint";
+import { MusicScreen } from "screens/music.slint";
 import { SettingsScreen } from "screens/settings.slint";
 // Fonte default da app: família INTERNA "PDA Mono" em TODA a interface.
 // "PDA Mono" é o nome que tools/font_pipeline.py grava na face gerada —
@@ -35,6 +36,7 @@ export enum AppState {
     Scripts,
     Settings,
     Networks,
+    Music,
 }
 
 export component AppWindow inherits Window {
@@ -129,6 +131,17 @@ export component AppWindow inherits Window {
     in property <string> net-current: "";
     callback net-pick(int);
     callback net-rescan();
+    in property <[string]> mus-tracks;
+    in property <string> mus-dev: "";
+    in property <string> mus-state: "";
+    in property <string> mus-track: "";
+    in property <string> mus-route: "auto";
+    callback mus-play(int);
+    callback mus-stop();
+    callback mus-pause();
+    callback mus-next();
+    callback mus-refresh();
+    callback mus-set-route(int);
 
     // ---- config ----
     in-out property <float> cfg-brightness: 80;
@@ -139,6 +152,7 @@ export component AppWindow inherits Window {
     in-out property <string> cfg-accent: "cyan";
     in-out property <bool> cfg-wifi-on: true;
     callback cfg-set-wifi-on(bool);
+    callback cfg-test-speaker();
     init => { Theme.accent = root.cfg-accent; }
     changed cfg-accent => { Theme.accent = root.cfg-accent; }
     in-out property <bool> cfg-boot-standby: false;
@@ -340,6 +354,22 @@ export component AppWindow inherits Window {
                 rescan => { root.net-rescan(); }
                 go-back => { root.app-back(); }
             }
+            if (root.active-app == AppState.Music) : MusicScreen {
+                width: 100%;
+                height: 100%;
+                tracks: root.mus-tracks;
+                dev: root.mus-dev;
+                state: root.mus-state;
+                track: root.mus-track;
+                route: root.mus-route;
+                play(i) => { root.mus-play(i); }
+                stop => { root.mus-stop(); }
+                pause => { root.mus-pause(); }
+                next => { root.mus-next(); }
+                refresh => { root.mus-refresh(); }
+                set-route(r) => { root.mus-set-route(r); }
+                go-back => { root.app-back(); }
+            }
             if (root.active-app == AppState.Settings) : SettingsScreen {
                 width: 100%;
                 height: 100%;
@@ -353,6 +383,7 @@ export component AppWindow inherits Window {
                 light-sleep <=> root.cfg-light-sleep;
                 wifi-on <=> root.cfg-wifi-on;
                 set-wifi-on(b) => { root.cfg-set-wifi-on(b); }
+                test-speaker => { root.cfg-test-speaker(); }
                 store-info: root.cfg-store-info;
                 wifi-info: root.cfg-wifi-info;
                 tab <=> root.cfg-tab;

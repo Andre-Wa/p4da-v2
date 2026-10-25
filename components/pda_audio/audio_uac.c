@@ -1,0 +1,491 @@
+/**
+ * audio_uac.c — M5a.1: saída de áudio USB (UAC host) + player WAV PCM16.
+ *
+ * Segundo client da USB Host Library (o 1º é o HID do teclado). O driver
+ * UAC roda a própria background task p/ eventos; a nossa fila de comandos
+ * (play/stop) vive na task "au_play".
+ *
+ * Round 1: sem ring buffer próprio (o write bloqueia no ring do driver),
+ * sem pause (suspend/resume ficam p/ M5a.2), sem hub (teclado+DAC juntos
+ * é o round 2, CONFIG_USB_HOST_HUBS_SUPPORTED).
+ */
+
+#include "audio_uac.h"
+#include "usb_host_state.h"
+#include "wav_parse.h"      /* SOM.1 (v2.2.0): parser compartilhado c/ player local */
+#include "usb/uac_host.h"
+
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "esp_heap_caps.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <wchar.h>
+
+static const char *TAG = "audio_uac";
+
+typedef struct { int op; char path[144]; } cmd_t;   /* op 1=play 2=stop */
+
+static QueueHandle_t s_q = NULL;
+static volatile bool s_present = false;
+static volatile bool s_playing = false;
+static volatile bool s_paused = false;
+static volatile uac_host_device_handle_t s_dev = NULL;
+static volatile bool s_stop_req = false;
+static char s_devname[48] = "";
+static char s_track[64] = "";
+static char s_state[48] = "iniciando";
+/* volume/mute (v5.8): declarados no topo — do_play os usa antes da
+ * seção de volume (uso-antes-definição pegou no build de 2026-10-08). */
+static char s_resume_path[144];   /* M5a.2.3: retomar após unplug/erro */
+static uint32_t s_resume_off;
+static int s_vol_pct = 70;
+static bool s_vol_ok = false;     /* só auto-aplica após 1 set com sucesso */
+static bool s_vol_bad = false;    /* device sem feature unit: desiste */
+static bool s_muted = false;
+static uint8_t s_addr = 0, s_iface = 0;
+static audio_uac_event_cb s_cb = NULL;
+static void *s_ctx = NULL;
+
+static void notify(void) { if (s_cb) s_cb(s_ctx); }
+static void set_state(const char *s)
+{
+    snprintf(s_state, sizeof(s_state), "%s", s);
+    notify();
+}
+
+/* ---------------- callbacks do driver (contexto da task dele) ---------------- */
+
+static void dev_event_cb(uac_host_device_handle_t h,
+                         uac_host_device_event_t ev, void *arg)
+{
+    (void)h; (void)arg;
+    if (ev == UAC_HOST_DRIVER_EVENT_DISCONNECTED) {
+        ESP_LOGW(TAG, "dispositivo UAC desconectado");
+        s_present = false;
+        s_stop_req = true;
+        s_playing = false;
+        set_state("sem dispositivo");
+    } else if (ev == UAC_HOST_DEVICE_EVENT_TRANSFER_ERROR) {
+        ESP_LOGW(TAG, "transfer error UAC — parando faixa");
+        s_stop_req = true;
+    } else if (ev == UAC_HOST_DEVICE_EVENT_TX_DONE && s_paused) {
+        /* ring esvaziou durante pause: nada a repor */
+    }
+}
+
+static void utf8_from_wchar(char *dst, size_t sz, const wchar_t *src)
+{
+    size_t o = 0;
+    for (size_t i = 0; src[i] && o + 1 < sz; i++) {
+        unsigned c = (unsigned)src[i];
+        if (c < 0x80) dst[o++] = (char)c;
+        else if (c < 0x800) {
+            if (o + 2 >= sz) break;
+            dst[o++] = (char)(0xC0 | (c >> 6));
+            dst[o++] = (char)(0x80 | (c & 0x3F));
+        } else {
+            if (o + 3 >= sz) break;
+            dst[o++] = (char)(0xE0 | (c >> 12));
+            dst[o++] = (char)(0x80 | ((c >> 6) & 0x3F));
+            dst[o++] = (char)(0x80 | (c & 0x3F));
+        }
+    }
+    dst[o] = 0;
+}
+
+/* M5.4.4: o callback do driver roda NA task de eventos do UAC — chamar
+ * APIs bloqueantes do driver ali (open/close p/ ler o nome) corrompia a
+ * fila de client events (asserts em usb_host_client_handle_events nos
+ * logs de 2026-10-07 com o QCY H3S). Callback só enfileira; quem abre
+ * é a task au_evt. */
+typedef struct { uint8_t op; uint8_t addr; uint8_t iface; } evt_t;
+static QueueHandle_t s_evtq = NULL;
+
+static void fetch_name_taskish(uint8_t addr, uint8_t iface)
+{
+    uac_host_device_config_t dcfg = {
+        .addr = addr, .iface_num = iface,
+        .buffer_size = 4096, .buffer_threshold = 2048,
+        .callback = dev_event_cb, .callback_arg = NULL,
+    };
+    uac_host_device_handle_t dev = NULL;
+    if (uac_host_device_open(&dcfg, &dev) != ESP_OK) return;
+    uac_host_dev_info_t info;
+    if (uac_host_get_device_info(dev, &info) == ESP_OK) {
+        utf8_from_wchar(s_devname, sizeof(s_devname), info.iProduct);
+        ESP_LOGI(TAG, "UAC device: \"%s\"", s_devname);
+    }
+    uac_host_device_close(dev);
+}
+
+static void evt_task(void *arg)
+{
+    (void)arg;
+    evt_t e;
+    for (;;) {
+        if (xQueueReceive(s_evtq, &e, portMAX_DELAY) != pdTRUE) continue;
+        if (e.op == 1) fetch_name_taskish(e.addr, e.iface);
+        set_state(s_present ? "pronto" : "sem dispositivo");
+    }
+}
+
+static void drv_event_cb(uint8_t addr, uint8_t iface_num,
+                         uac_host_driver_event_t ev, void *arg)
+{
+    (void)arg;
+    if (ev != UAC_HOST_DRIVER_EVENT_TX_CONNECTED) return;   /* speaker/DAC */
+    s_addr = addr;
+    s_iface = iface_num;
+    s_present = true;
+    ESP_LOGI(TAG, "speaker UAC encontrado (addr %u iface %u)", addr, iface_num);
+    evt_t e = { .op = 1, .addr = addr, .iface = iface_num };
+    xQueueSend(s_evtq, &e, 0);   /* NÃO abrir nada neste contexto */
+}
+
+/* ---------------- WAV PCM16 ---------------- */
+
+/* ---------------- player ---------------- */
+
+static void do_play(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) { set_state("erro: arquivo não abre"); return; }
+    wav_info_t w;
+    if (!wav_parse(f, &w)) {
+        fclose(f); set_state("erro: só WAV PCM16"); return;
+    }
+    uint16_t ch = w.channels, bits = w.bits;
+    uint32_t rate = w.sample_rate, dlen = w.data_len;
+    long doff = w.data_off;
+    if (bits != 16 || (ch != 1 && ch != 2)) {
+        fclose(f); set_state("erro: WAV 16 bits 1-2 canais"); return;
+    }
+    if (!s_present) { fclose(f); set_state("sem dispositivo"); return; }
+
+    uac_host_device_config_t dcfg = {
+        .addr = s_addr, .iface_num = s_iface,
+        .buffer_size = 16384, .buffer_threshold = 4096,
+        .callback = dev_event_cb, .callback_arg = NULL,
+    };
+    uac_host_device_handle_t dev = NULL;
+    if (uac_host_device_open(&dcfg, &dev) != ESP_OK) {
+        fclose(f); set_state("erro: open device"); return;
+    }
+    uac_host_dev_info_t info;
+    if (uac_host_get_device_info(dev, &info) != ESP_OK) {
+        uac_host_device_close(dev); fclose(f); set_state("erro: info"); return;
+    }
+    bool found = false;
+    /* M5a.2: alt 0 do UAC1 é zero-bandwidth (sem endpoints) — o driver
+     * loga "Invalid alt setting" ao sondá-lo; começa no 1. */
+    for (uint8_t a = 1; a < info.iface_alt_num && !found; a++) {
+        uac_host_dev_alt_param_t p;
+        if (uac_host_get_device_alt_param(dev, a, &p) != ESP_OK) continue;
+        if (p.format != 1 || p.channels != ch || p.bit_resolution != 16) continue;
+        if (p.sample_freq_type == 0) {
+            found = (rate >= p.sample_freq_lower && rate <= p.sample_freq_upper);
+        } else {
+            for (int q = 0; q < p.sample_freq_type && q < UAC_FREQ_NUM_MAX; q++)
+                if (p.sample_freq[q] == rate) found = true;
+        }
+    }
+    if (!found) {
+        uac_host_device_close(dev); fclose(f);
+        set_state("erro: device não suporta o fmt do WAV"); return;
+    }
+    uac_host_stream_config_t sc = {
+        .channels = (uint8_t)ch, .bit_resolution = 16,
+        .sample_freq = rate, .flags = 0,
+    };
+    if (uac_host_device_start(dev, &sc) != ESP_OK) {
+        uac_host_device_close(dev); fclose(f); set_state("erro: start stream"); return;
+    }
+    if (s_vol_ok && !s_vol_bad)
+        uac_host_device_set_volume(dev,
+            (uint8_t)(s_vol_pct == 100 ? 99 : s_vol_pct));   /* best-effort */
+    s_playing = true;
+    s_paused = false;
+    s_dev = dev;
+    s_stop_req = false;
+    set_state("tocando");
+    ESP_LOGI(TAG, "tocando \"%s\" (%lu Hz, %u ch)", s_track,
+             (unsigned long)rate, (unsigned)ch);
+    fseek(f, doff, SEEK_SET);
+    uint8_t buf[4096];
+    uint32_t left = dlen;
+    /* M5a.2.3: unplug/erro no meio da faixa guardou o offset consumido;
+     * mesmo caminho de novo = retoma de onde parou. */
+    if (s_resume_path[0] && !strcmp(s_resume_path, path) && s_resume_off < dlen) {
+        fseek(f, doff + (long)s_resume_off, SEEK_SET);
+        left = dlen - s_resume_off;
+        ESP_LOGI(TAG, "retomando \"%s\" de +%lu s",
+                 s_track, (unsigned long)(s_resume_off / (rate * ch * 2u)));
+    }
+    while (!s_stop_req && s_present && left > 0) {
+        /* pause: segura o fluxo sem fechar o device (posição = offset
+         * do arquivo, preservada); stop/unplug furam a espera. */
+        while (s_paused && !s_stop_req && s_present)
+            vTaskDelay(pdMS_TO_TICKS(50));
+        if (s_stop_req || !s_present) break;
+        uint32_t n = left < sizeof(buf) ? left : (uint32_t)sizeof(buf);
+        if (fread(buf, 1, n, f) != n) break;
+        /* M5a.2.1 (v5.7): write pode falhar UMA vez em transição
+         * (device recém-conectado assentando, suspend/resume de pause,
+         * settle do H3S) — antes qualquer erro matava a faixa (logs de
+         * 2026-10-08: write INVALID_STATE ~1 s após o start). Retry 5×
+         * com 100 ms; aborta só em erro persistente/unplug/stop. */
+        int wfail = 0;
+        for (;;) {
+            esp_err_t e = uac_host_device_write(dev, buf, n,
+                                                pdMS_TO_TICKS(2000));
+            if (e == ESP_OK) break;
+            if (!s_present || s_stop_req) goto play_end;
+            /* v5.8: com pause ativo o EP está suspenso e o write falha
+             * POR DESIGN — esperar o resume, não contar retry (bug da
+             * 16ª rodada: 5 retries durante pause = "fim da faixa" e a
+             * música morria pausada). */
+            if (!s_paused && ++wfail >= 5) {
+                ESP_LOGW(TAG, "write: %s (%d retries) — fim da faixa",
+                         esp_err_to_name(e), wfail);
+                goto play_end;
+            }
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        left -= n;
+    }
+play_end:
+    /* M5a.2.3: unplug (!s_present) no meio = guarda ponto p/ retomar;
+     * stop explícito ou fim natural = limpa. */
+    if (!s_present && left > 0) {
+        snprintf(s_resume_path, sizeof(s_resume_path), "%s", path);
+        s_resume_off = dlen - left;
+    } else if (s_stop_req || left == 0) {
+        if (s_resume_path[0] && !strcmp(s_resume_path, path)) {
+            s_resume_path[0] = 0;
+            s_resume_off = 0;
+        }
+    }
+    vTaskDelay(pdMS_TO_TICKS(120));   /* drain do ring do driver */
+    if (s_paused && s_present) uac_host_device_resume(dev);
+    s_paused = false;
+    s_dev = NULL;
+    /* M5a.2.1: stop SÓ com device vivo (unplug durante pause/playback
+     * deixava o close/stop travando a task au_play — fila morria junto,
+     * teste 5 da 15ª rodada). close best-effort sempre, p/ liberar o
+     * driver. */
+    if (s_present) uac_host_device_stop(dev);
+    uac_host_device_close(dev);
+    s_playing = false;
+    fclose(f);
+    const bool ended = !s_stop_req && left == 0;
+    s_stop_req = false;
+    set_state(ended ? "fim da faixa" : "parado");
+}
+
+static void player_task(void *arg)
+{
+    (void)arg;
+    cmd_t c;
+    for (;;) {
+        if (xQueueReceive(s_q, &c, portMAX_DELAY) != pdTRUE) continue;
+        if (c.op == 1) do_play(c.path);
+        /* op 2 (stop) aposentado na M5a.2: stop é flag direta. */
+    }
+}
+
+/* ---------------- API ---------------- */
+
+static void init_task(void *arg)
+{
+    (void)arg;
+    uac_host_driver_config_t cfg = {
+        .create_background_task = true,
+        .task_priority = 5,
+        .stack_size = 6144,
+        .core_id = tskNO_AFFINITY,
+        .callback = drv_event_cb,
+        .callback_arg = NULL,
+    };
+    esp_err_t e = ESP_FAIL;
+    /* v5.12.0: espera a Host Library existir (o HID instala) ANTES do 1º
+     * uac_host_install(): sem isto o 1º attempt falhava e o componente
+     * logava E "Unable to register USB Host client" em todo boot.
+     * Bounded (5 s): se o HID nunca subir, cai no retry de sempre. */
+    for (int i = 0; i < 100 && !usb_host_state_ready(); i++) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    for (int i = 0; i < 50 && e != ESP_OK; i++) {   /* espera a Host Library */
+        e = uac_host_install(&cfg);
+        if (e != ESP_OK) vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "uac_host_install falhou: %s", esp_err_to_name(e));
+        set_state("indisponível");
+    } else {
+        ESP_LOGI(TAG, "UAC host instalado (M5a)");
+        set_state(s_present ? "pronto" : "sem dispositivo");
+    }
+    vTaskDelete(NULL);
+}
+
+esp_err_t audio_uac_init(void)
+{
+    if (s_q) return ESP_OK;
+    s_q = xQueueCreate(2, sizeof(cmd_t));
+    if (!s_q) return ESP_ERR_NO_MEM;
+    s_evtq = xQueueCreate(4, sizeof(evt_t));
+    if (!s_evtq) return ESP_ERR_NO_MEM;
+    /* M5.4.5: 6148→10240 em PSRAM: a cadeia fopen/fread FATFS +
+     * uac open/start + ESP_LOGI(vprintf) estourou 6144 internos no
+     * primeiro play (Stack protection fault em _svfprintf_r, log de
+     * 2026-10-07). Mesma política das threads de I/O do main.cpp. */
+    if (xTaskCreateWithCaps(player_task, "au_play", 10240, NULL, 4, NULL,
+                            MALLOC_CAP_SPIRAM) != pdPASS)
+        return ESP_FAIL;
+    if (xTaskCreateWithCaps(evt_task, "au_evt", 6144, NULL, 4, NULL,
+                            MALLOC_CAP_SPIRAM) != pdPASS)
+        return ESP_FAIL;
+    if (xTaskCreate(init_task, "au_init", 3072, NULL, 3, NULL) != pdPASS)
+        return ESP_FAIL;
+    return ESP_OK;
+}
+
+bool audio_uac_present(void) { return s_present; }
+const char *audio_uac_dev_name(void) { return s_devname; }
+/* ---------------- volume/mute (v5.8) ----------------
+ * Control transfer de volume em device sem feature unit (H3S) timeouta
+ * em ~5 s: NUNCA no caminho do stream/UI — task descartável própria. */
+typedef struct { int delta; bool mute; } volcmd_t;
+
+static void vol_task(void *arg)
+{
+    volcmd_t *c = (volcmd_t *)arg;
+    uac_host_device_handle_t dev = (uac_host_device_handle_t)s_dev;
+    if (c->mute) {
+        if (dev && s_playing && !s_vol_bad) {
+            s_muted = !s_muted;
+            if (uac_host_device_set_mute(dev, s_muted) != ESP_OK) {
+                s_vol_bad = true;
+                ESP_LOGW(TAG, "mute não suportado neste device");
+            } else {
+                ESP_LOGI(TAG, "mute %s", s_muted ? "on" : "off");
+            }
+        }
+    } else {
+        s_vol_pct += c->delta;
+        if (s_vol_pct < 0) s_vol_pct = 0;
+        if (s_vol_pct > 100) s_vol_pct = 100;
+        if (dev && s_playing && !s_vol_bad) {
+            /* H3S (e clones Jieli?): índice 100% da curva = MUTE no
+             * device (relato 17ª rodada: som some em 100%, volta em
+             * 90%). Envia no máx. 99; o pct cheio fica só no log/UI. */
+            uint8_t v = (uint8_t)(s_vol_pct == 100 ? 99 : s_vol_pct);
+            esp_err_t e = uac_host_device_set_volume(dev, v);
+            if (e != ESP_OK) {
+                s_vol_bad = true;
+                ESP_LOGW(TAG, "volume não suportado neste device (%s)",
+                         esp_err_to_name(e));
+            } else {
+                s_vol_ok = true;
+                ESP_LOGI(TAG, "volume %d%%", s_vol_pct);
+                /* M5a.2.4: o mínimo da curva do device não é silêncio
+                 * (H3S: 0% ainda audível, 0–10% indistinguíveis); 0% vira
+                 * mute real via feature unit. */
+                if (s_vol_pct == 0) {
+                    if (uac_host_device_set_mute(dev, true) == ESP_OK)
+                        s_muted = true;
+                } else if (s_muted) {
+                    if (uac_host_device_set_mute(dev, false) == ESP_OK)
+                        s_muted = false;
+                }
+            }
+        } else {
+            ESP_LOGI(TAG, "volume %d%% (aplica no próximo play)", s_vol_pct);
+        }
+    }
+    free(c);
+    vTaskDelete(NULL);
+}
+
+static void vol_spawn(int delta, bool mute)
+{
+    volcmd_t *c = calloc(1, sizeof(*c));
+    if (!c) return;
+    c->delta = delta; c->mute = mute;
+    if (xTaskCreate(vol_task, "au_vol", 3072, c, 3, NULL) != pdPASS) free(c);
+}
+
+void audio_uac_volume_step(int delta) { vol_spawn(delta, false); }
+void audio_uac_mute_toggle(void) { vol_spawn(0, true); }
+
+bool audio_uac_playing(void) { return s_playing; }
+bool audio_uac_paused(void) { return s_paused; }
+
+void audio_uac_pause(void)
+{
+    if (!s_playing || s_paused || !s_present) return;
+    s_paused = true;
+    if (s_dev) uac_host_device_suspend((uac_host_device_handle_t)s_dev);
+    set_state("pausado");
+}
+
+void audio_uac_resume(void)
+{
+    if (!s_playing || !s_paused) return;
+    s_paused = false;
+    /* sem device (unplug pausado): estado limpa, driver não é tocado */
+    if (s_dev && s_present)
+        uac_host_device_resume((uac_host_device_handle_t)s_dev);
+    set_state(s_present ? "tocando" : "sem dispositivo");
+}
+const char *audio_uac_track(void) { return s_track; }
+const char *audio_uac_state(void) { return s_state; }
+void audio_uac_set_event_cb(audio_uac_event_cb cb, void *ctx)
+{
+    s_cb = cb; s_ctx = ctx;
+}
+
+esp_err_t audio_uac_play_fresh(const char *path)
+{
+    /* tap explícito na lista = começa do zero */
+    if (s_resume_path[0] && !strcmp(s_resume_path, path)) {
+        s_resume_path[0] = 0;
+        s_resume_off = 0;
+    }
+    return audio_uac_play(path);
+}
+
+esp_err_t audio_uac_play(const char *path)
+{
+    if (!s_q) return ESP_ERR_INVALID_STATE;
+    /* M5a.2: trocar de faixa com algo tocando = para a atual AGORA
+     * (a flag alcança o loop de write; a fila só é lida entre faixas). */
+    if (s_playing) s_stop_req = true;
+    const char *base = strrchr(path, '/');
+    snprintf(s_track, sizeof(s_track), "%s", base ? base + 1 : path);
+    notify();
+    cmd_t c = { .op = 1 };
+    snprintf(c.path, sizeof(c.path), "%s", path);
+    xQueueReset(s_q);
+    return xQueueSend(s_q, &c, 0) == pdTRUE ? ESP_OK : ESP_FAIL;
+}
+
+void audio_uac_stop(void)
+{
+    /* M5a.2 (bug da 14ª rodada): stop pela FILA nunca chegava a tempo —
+     * o player só lê a fila ENTRE faixas, então o Parar da UI esperava o
+     * WAV acabar. Stop é flag direta (o loop de write a vê no próximo
+     * chunk, ~23 ms); a fila fica só p/ play. Sem faixa tocando, descarta
+     * plays pendentes (tap Parar logo após tocar uma faixa). */
+    if (!s_q) return;
+    if (!s_playing) {
+        xQueueReset(s_q);
+        set_state("parado");
+        return;
+    }
+    s_stop_req = true;
+}

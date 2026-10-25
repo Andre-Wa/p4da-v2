@@ -1,0 +1,14 @@
+## pda_audio — dependências gerenciadas (camada L3)
+dependencies:
+  idf:
+    version: ">=5.3,<6.0"
+
+  # Codec ES8311 + camada de abstraction de áudio (falante local).
+  espressif/esp_codec_dev:
+    version: "==1.6.2"
+
+  # Player USB áudio. ATENÇÃO (docs/DEPENDENCIAS.md #3): 1.5.0 é
+  # UAC1-only (uac_host.c:1527) — devices UAC2 enumeram mas não viram
+  # speaker. O QCY H3S de campo da v1 era UAC1.
+  espressif/usb_host_uac:
+    version: "==1.5.0"

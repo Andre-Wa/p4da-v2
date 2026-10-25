@@ -239,3 +239,91 @@ build de alvo completo (`idf.py build`) — host verde é necessário mas não
 suficiente; visibilidade de include entre componentes é propriedade do
 build de alvo. Os warnings de `esp_lcd_touch_get_coordinates` deprecated
 no slint-esp.cpp seguem ACEITOS (docs/DEPENDENCIAS.md, warnings aceitos).
+
+---
+
+# Rodada de validação em hardware — v2.0.0/v2.1.1 (2026-10-23)
+
+Usuário (dono da placa) rodou o CHECKLIST_HW_v2.1.0 + v2.1.1 e reportou:
+
+- **L1 (Parte A): FECHADA.** A2–A4 com serial (standby manual sticky:
+  `ACTIVE -> DIM (pedido manual)` -> `STANDBY` em ~200 ms, wake por BOOT;
+  hibernate com `sessão salva: app=noteedit note=notes/Exemplo.md` e
+  restore no boot pós-reset via `ui-gate: 1 evento(s)`), A5–A10 (OSK ×
+  USB, markdown, ops de arquivo, pulldown, gestos), A11 (logger CSV +
+  serialização de scripts), A12 (persistência). HWM de standby saudáveis
+  (ui_loop 23,2–23,7 KB livres).
+- **L2 (Parte B): FECHADA exceto B10.** B1 (offline sem wifi.lua), B2–B9
+  (conexão boot, NTP+TZ, scan/prompt/senha salva, chave de rádio, quick
+  panel, reason por nome, wifi.lua reescrito como lista), B11
+  (regressões). Pause/resume de standby com NTP vivo no wake
+  (`NTP pausado`/`NTP retomado` — regressão M4.14.2 segue curada).
+- **B10 (seed de relógio): procedimento entregue** com a resposta ao
+  reporte (3 passos: semear com NTP, cortar rádio, reboot observando
+  status bar + log `relógio semeado do NVS`). Aberto até o reporte.
+
+Com isso o ROADMAP marca L1 e L2 como **aceitas em hardware** (B10
+pendente isolado, sem bloquear L3: é caminho de boot independente).
+
+## F12 — Errata do B10 (seed de relógio) + comentário de projeto
+
+Reporte do usuário (2026-10-23): a linha `relógio semeado do NVS` aparece
+no boot sem rede, mas a status bar segue `00:00:00`. Investigação: o seed
+(wifi_net_seed_clock → settimeofday) de fato roda; quem gateia a status
+bar em HH:MM é `s_synced` (NTP) — na v1 e na v2. O seed existe para
+`time()`/mtimes/`os.date()` (coluna "hora" dos loggers offline), não para
+a tela: sem RTC, o relógio semeado deriva desligado e exibi-lo como hora
+real seria enganoso. **O erro era do checklist B10**, não do firmware.
+Correções: texto do B10 no CHECKLIST_HW_v2.1.0.md (teste via `os.date()`
+no Lua com rádio off), ROADMAP (B10 fechado com errata), comentário de
+projeto em status_bar.cpp. Sem mudança de comportamento → sem nova
+versão de firmware (rebuild opcional, só comentário).
+Obs. de rodada: o `Corrupted dir pair ... formatting...` do LittleFS após
+`erase-flash` é o caminho documentado (partição storage apagada → mount
+formata; espelho interno zera, SD/NVS intocados — nota M4.7 da v1).
+
+## F13 — B10 fechado (evidência do usuário)
+
+Com rádio desligado pós-seed: `pda.log("B10:", os.date(...), os.time())`
+→ `B10: 2026-10-24 21:00:05 1792886405`. Os dois campos são o MESMO
+instante (epoch é UTC; os.date aplica TZ America/Sao_Paulo: 1792886405 =
+2026-10-25 00:00:05Z = 2026-10-24 21:00:05 BRT). Data plausível sem rede
+= seed do NVS funcionando. B10 marcado [x] no checklist e no ROADMAP;
+L1 e L2 agora estão 100% aceitas em hardware.
+
+---
+
+# v2.2.0 — camada L3 (áudio: falante local + UAC + rota)
+
+## F14 — `components/pda_audio` + tela Música
+
+- `wav_parse.[ch]` NOVO: parser PCM16 extraído do audio_uac.c da v1 para
+  servir aos DOIS backends e ao host. Teste novo `host_wav_test.c` com
+  WAVs sintéticos — e ele já pagou o preço: o caso C (LIST de tamanho
+  ímpar) falhou no primeiro run porque o WRITER do teste não emitia o
+  pad de word alignment que o RIFF exige e o parser presume; corrigido o
+  writer (o parser estava certo).
+- `audio_i2s.[ch]`: beep da v1 (mutex 50 ms, envelope, log no início) +
+  player local SOM.1 (task spk_play 8K PSRAM, 44k1/48k, mono→estéreo,
+  pause fecha o codec, stop por flag, recusa honesta de outras taxas) +
+  handshake beep×música (SOM.1 spec do AUDIO.md: beep suspende o player
+  entre chunks, ≤ ~23 ms, player reabre na taxa dele) + volume/mute
+  SOM.3 no codec.
+- `audio_uac.[ch]`: v1 1:1 (pause/resume com posição, retry de write
+  pause-aware, resume pós-unplug, volume/mute em task descartável,
+  quirks H3S documentados) — só o parse_wav static virou wav_parse.
+- `audio_route.[ch]` (SOM.2): auto/interno/USB, RAM-only (persistência
+  = SOM.6), resolvido no play de cada faixa.
+- App: `screen_music.cpp` (lista, dev/state/track do backend DONO da
+  faixa, rota na tela), media keys despachadas p/ `music_on_media_key`
+  (input_usb registra o cb que a L1 deixara solto), sessão "music",
+  dispatch "Musica", Config>Sistema "Teste som (falante)".
+- UI: music.slint + botões de rota; app_ui.slint mus-* + route +
+  cfg-test-speaker + AppState.Music; tile Música ativo; render music.
+- yml/CMake: esp_codec_dev 1.6.2 + usb_host_uac 1.5.0 (UAC1-only,
+  DEPENDENCIAS #3); REQUIRES pda_board/pda_usb/usb/esp_driver_i2s.
+
+Validação: wav A–F OK · syntaxcheck 13/13 · cfg/uigate/lua-bind/md
+verdes · slint limpo · 13 renders (music incl.). Áudio em si = aceite
+de HW (checklist da release): é o subsistema com mais quirks de campo da
+v1 — NADA dele é stubável com confiança no host.

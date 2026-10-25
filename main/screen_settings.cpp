@@ -19,6 +19,7 @@
 #include "power_mgmt.h"
 #include "storage_init.h"
 #include "wifi_net.h"
+#include "audio_i2s.h"
 
 #include "esp_log.h"
 
@@ -95,6 +96,10 @@ void settings_wire(AppWindow &ui)
         activity();
         pda_config_reset_defaults();
         push_settings_to_ui();
+    });
+    ui.on_cfg_test_speaker([]() {
+        activity();
+        spawn_thread("spk_test", 6144, []() { audio_i2s_beep(1200); });
     });
     ui.on_cfg_sleep_now([]() {
         activity();

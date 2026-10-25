@@ -46,7 +46,7 @@ echo "== render =="
 # coltest/fontpitch = sondas M4.13 (v1) do pitch de glifo (drift do
 # cursor-bloco): coltest compara overlay vetorial vs glifo in-flow na
 # col 43; fontpitch mede o avanço real por (face,tamanho) com 24 'M'.
-for mode in reading reading2 edit networks prompt panel paneldrag settings settings2 launcher coltest fontpitch; do
+for mode in reading reading2 edit networks music prompt panel paneldrag settings settings2 launcher coltest fontpitch; do
     ./harness "$mode"
     python3 - "$mode" "$REPO" <<'PY'
 import sys

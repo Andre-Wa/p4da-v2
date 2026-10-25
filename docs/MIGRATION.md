@@ -102,7 +102,13 @@ Legenda: **=** carregado 1:1 · **~** carregado com adaptação ·
 5. Launcher: tile Redes `enabled: true`; dispatch "Redes" + sessão.
 6. `tools/flash_c6_wifi.sh` da v1 (host 2.12.9 + slave 2.12.9).
 
-## 3. Religando a L3 (áudio)
+## 3. Religando a L3 (áudio) — FEITO na v2.2.0
+
+> Executado (commit F14): pda_audio (wav_parse testado no host +
+> audio_i2s c/ player local SOM.1 e handshake beep×música + audio_uac
+> 1:1 + audio_route SOM.2), screen_music.cpp, music.slint c/ botões de
+> rota, props mus-* + cfg-test-speaker de volta, media keys registradas
+> no input_usb, sessão "music", WAVs de teste no template.
 
 1. `components/pda_audio/`: `audio_uac.[ch]` + `audio_i2s.[ch]` da v1 +
    extração do parser WAV p/ `wav_parse.[ch]` (SOM.1 da v1 já planejava);

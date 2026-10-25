@@ -49,3 +49,11 @@ gcc -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
 
 echo "--- rodando /tmp/luabind_bin ---"
 /tmp/luabind_bin
+
+# ---- WAV-PARSE (L3/SOM.1): wav_parse.c REAL (lógica pura) contra WAVs
+# sintéticos gerados pelo teste (fmt ext, LIST ímpar+FACT, não-PCM...). ----
+mkdir -p /tmp/wavtest
+gcc -std=gnu11 -Wall -Wextra -Wno-unused-parameter     -I components/pda_audio/include     components/pda_audio/wav_parse.c tools/hosttest/host_wav_test.c     -o /tmp/wavtest_bin
+
+echo "--- rodando /tmp/wavtest_bin ---"
+/tmp/wavtest_bin

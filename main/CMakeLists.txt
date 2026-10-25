@@ -12,6 +12,7 @@ idf_component_register(
         "session.cpp"
         "screen_launcher.cpp"
         "screen_networks.cpp"
+        "screen_music.cpp"
         "screen_files.cpp"
         "screen_editor.cpp"
         "screen_notes.cpp"
@@ -25,6 +26,7 @@ idf_component_register(
         pda_power
         pda_usb
         pda_net
+        pda_audio
         esp_lcd          # tipos de panel/touch p/ slint_esp_init
         nvs_flash        # nvs_flash_init no bring-up
         esp_timer        # relógio da status bar + cursor blink

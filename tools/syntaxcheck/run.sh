@@ -42,6 +42,7 @@ INCLUDES=(
     -I components/pda_power/include
     -I components/pda_usb/include
     -I components/pda_net/include
+    -I components/pda_audio/include
 )
 
 fail=0

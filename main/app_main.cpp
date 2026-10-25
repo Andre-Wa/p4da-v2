@@ -35,6 +35,8 @@
 #include "power_mgmt.h"
 #include "usb_hid_keyboard.h"   /* teardown/resume do HID no standby */
 #include "wifi_net.h"           /* L2: STA+NTP via C6 */
+#include "audio_i2s.h"          /* L3: falante local (beep + player) */
+#include "audio_uac.h"          /* L3: player USB (UAC1) */
 
 #include "nvs_flash.h"
 
@@ -127,6 +129,7 @@ extern "C" void app_main(void)
     status_bar_wire(*ui);
     launcher_wire(*ui);
     networks_wire(*ui);
+    music_wire(*ui);
     files_wire(*ui);
     notes_wire(*ui);
     editor_wire(*ui);      /* cria também o timer do cursor piscante */
@@ -142,6 +145,20 @@ extern "C" void app_main(void)
         }
         nav_back();
     });
+
+    /* ---------- áudio (L3): falante local + UAC ----------
+     * v5.4.3 (v1, lição cara): o boot-wire do UAC já se perdeu UMA vez
+     * por replace sem assert — sem audio_uac_init() o driver NUNCA
+     * instala e o log fica mudo. Eventos dos dois backends refrescam a
+     * tela Música via ui_post (regra 5). */
+    audio_i2s_init();
+    audio_i2s_set_event_cb([](void *) {
+        ui_post([]() { push_mus_ui(); });
+    }, NULL);
+    audio_uac_set_event_cb([](void *) {
+        ui_post([]() { push_mus_ui(); });
+    }, NULL);
+    audio_uac_init();
 
     /* ---------- entrada USB (teclado HID) ---------- */
     input_usb_init();

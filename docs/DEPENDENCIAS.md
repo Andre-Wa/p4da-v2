@@ -23,6 +23,8 @@ incompatibilidade com IDF 5.5.1 (auditoria da v1 contra o registry).
 | `espressif/usb_host_hid` | **==1.2.1** | pda_usb | ✅ |
 | `espressif/esp_hosted` | **==2.12.9** | pda_net | ✅ (par c/ slave 2.12.9) |
 | `espressif/esp_wifi_remote` | **>=1.3.1** | pda_net | ✅ |
+| `espressif/esp_codec_dev` | **==1.6.2** | pda_audio | ✅ (ES8311) |
+| `espressif/usb_host_uac` | **==1.5.0** | pda_audio | ⚠️ UAC1-only (#3) |
 
 `idf: ">=5.3,<6.0"` em todos os yml: IDF 6.x recusa P4 rev <3.1 (chip
 ES) e muda APIs junto (st7701 2.x etc.).
@@ -48,7 +50,7 @@ ES) e muda APIs junto (st7701 2.x etc.).
 | Camada | Dependências |
 |---|---|
 | L2 (v2.1.0, no build) | `espressif/esp_hosted ==2.12.9` + `espressif/esp_wifi_remote >=1.3.1` (rules esp32p4) em `pda_net`; linhas ESP_HOSTED_*/SNTP no sdkconfig |
-| L3 | `espressif/usb_host_uac ==1.5.0` + `espressif/esp_codec_dev ==1.6.2` em `pda_audio` |
+| L3 (v2.2.0, no build) | `espressif/usb_host_uac ==1.5.0` + `espressif/esp_codec_dev ==1.6.2` em `pda_audio` |
 | L4 | nenhuma nova (ADC/SAR são do IDF) |
 
 ## Warnings aceitos (documentados, não são bugs)

@@ -77,6 +77,7 @@ export component SettingsScreen inherits Rectangle {
     in property <string> wifi-info;
     in-out property <int> tab: 0;
     callback open-networks();
+    callback test-speaker();
     callback save();
     callback reset();
     callback sleep-now();
@@ -145,6 +146,7 @@ export component SettingsScreen inherits Rectangle {
             if root.tab == 1: VerticalLayout {
                 // v5.14.0 (edição de campo adotada): sem `width:` fixo —
                 // filho de VerticalLayout estica à largura da coluna.
+                GhostButton { text: "Teste som (falante)"; clicked => { root.test-speaker(); } }
                 spacing: Theme.sp-md;
                 GridLayout {
                     spacing: Theme.sp-sm;

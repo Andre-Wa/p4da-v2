@@ -11,8 +11,8 @@
  *    ui_post (M4.15.3/UI-LOOP-GATE: aplicar antes do loop = assert
  *    xTaskToNotify==NULL).
  *
- * v2/L1: ramo "music" removido (volta na L3). Apps persistíveis:
- * files, notes, scripts, settings, noteedit.
+ * v2.2.0 (L3): ramo "music" de volta. Apps persistíveis: files, notes,
+ * scripts, settings, noteedit, music.
  */
 
 #include "screens.h"
@@ -104,6 +104,8 @@ void session_restore_apply(void)
         scripts_open();
     } else if (s_rest_app == "settings") {
         settings_open();
+    } else if (s_rest_app == "music") {
+        music_open();
     }
     storage_delete_file(s_rest_path.c_str());
 }
