@@ -26,6 +26,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"   /* v2.2.2: fila do watcher */
 
 #include <cstring>
 #include <atomic>
@@ -39,23 +40,40 @@ static TaskHandle_t s_lib_task = NULL;
 static volatile bool s_installed = false;
 static volatile bool s_host_ready = false;  /* v5.12.0: usb_host_install() OK (usb_host_state.h) */
 
-/* v2.2.1: watcher de desconexão (ver usb_host_state.h). Client próprio,
- * task própria (2K), só processa eventos de connection/disconnection —
- * não abre nada, não interfere nos clients dos drivers. */
-static usb_host_dev_gone_cb s_gone_cb = NULL;
+/* v2.2.2 (rework do watcher v2.2.1, contra usb_host.h REAL do IDF 5.5):
+ * DEV_GONE só é entregue a client que SEGURA o device ABERTO ("A device
+ * opened by the client is now gone"). Então o watcher segura o handle de
+ * TODO device enumerado (open device-level, sem claim de interface —
+ * coexiste com HID/UAC): unplug gera DEV_GONE p/ nós ANTES de qualquer
+ * open stale (crash uac_host.c:2171 da rodada 2026-10-25). Opens/closes
+ * NUNCA no callback de evento (mesma razão do UAC M5.4.4): callback
+ * enfileira, esta task executa. */
+#define USB_WATCH_MAX 8
+typedef struct { uint8_t op; uint8_t addr; usb_device_handle_t hdl; } wevt_t;
+static QueueHandle_t s_watch_q = NULL;
 static TaskHandle_t s_watch_task = NULL;
+static usb_host_client_handle_t s_watch_cli = NULL;
+static struct { uint8_t addr; usb_device_handle_t hdl; } s_held[USB_WATCH_MAX];
+static volatile bool s_watch_close_all = false;
+
+static usb_host_dev_gone_cb s_gone_cb = NULL;
 
 void usb_host_set_dev_gone_cb(usb_host_dev_gone_cb cb) { s_gone_cb = cb; }
 
-static void usb_watch_cb(usb_host_client_handle_t cli,
-                         const usb_host_client_event_msg_t *msg, void *arg)
+static void usb_watch_cb(const usb_host_client_event_msg_t *msg, void *arg)
 {
-    (void)cli; (void)arg;
-    if (msg->event == USB_HOST_EVENT_DEVICE_DISCONNECTED && s_gone_cb) {
-        ESP_LOGI(TAG, "watcher: device addr %u desconectou",
-                 (unsigned)msg->param.dev_info.dev_addr);
-        s_gone_cb(msg->param.dev_info.dev_addr);
+    (void)arg;
+    wevt_t e = { 0, 0, NULL };
+    if (msg->event == USB_HOST_CLIENT_EVENT_NEW_DEV) {
+        e.op = 1;
+        e.addr = msg->new_dev.address;
+    } else if (msg->event == USB_HOST_CLIENT_EVENT_DEV_GONE) {
+        e.op = 2;
+        e.hdl = msg->dev_gone.dev_hdl;
+    } else {
+        return;
     }
+    xQueueSend(s_watch_q, &e, 0);
 }
 
 static void usb_watch_task(void *arg)
@@ -63,23 +81,68 @@ static void usb_watch_task(void *arg)
     (void)arg;
     usb_host_client_config_t ccfg = {};
     ccfg.is_synchronous = false;
-    ccfg.max_nb_event_msg = 4;
-    ccfg.async_client_config.callback = usb_watch_cb;
-    ccfg.async_client_config.callback_arg = NULL;
-    usb_host_client_handle_t cli = NULL;
-    if (usb_host_client_register(&ccfg, &cli) != ESP_OK) {
+    ccfg.max_num_event_msg = 4;
+    ccfg.async.client_event_callback = usb_watch_cb;
+    ccfg.async.callback_arg = NULL;
+    if (usb_host_client_register(&ccfg, &s_watch_cli) != ESP_OK) {
         ESP_LOGW(TAG, "watcher: client_register falhou — sem aviso de gone");
         s_watch_task = NULL;
         vTaskDelete(NULL);
         return;
     }
-    /* Padrão dos exemplos do IDF: callback + handle_events em task
-     * própria. Erro = teardown da lib (prepare_sleep): sai e libera o
-     * slot p/ o resume recriar (s_watch_task=NULL). */
-    while (usb_host_client_handle_events(cli, portMAX_DELAY) == ESP_OK) { }
-    usb_host_client_deregister(cli);
+    for (;;) {
+        /* callbacks rodam NESTE contexto (docs do IDF) e só enfileiram */
+        const bool alive =
+            (usb_host_client_handle_events(s_watch_cli,
+                                           pdMS_TO_TICKS(50)) == ESP_OK);
+        wevt_t e;
+        while (xQueueReceive(s_watch_q, &e, 0) == pdTRUE) {
+            if (e.op == 1) {
+                usb_device_handle_t h = NULL;
+                if (usb_host_device_open(s_watch_cli, e.addr, &h) == ESP_OK) {
+                    for (auto &sl : s_held)
+                        if (!sl.hdl) { sl.hdl = h; sl.addr = e.addr; break; }
+                } else {
+                    ESP_LOGW(TAG, "watcher: open addr %u falhou (não segurado)",
+                             (unsigned)e.addr);
+                }
+            } else {
+                uint8_t addr = 0;
+                for (auto &sl : s_held)
+                    if (sl.hdl == e.hdl) { addr = sl.addr; sl.hdl = NULL; sl.addr = 0; break; }
+                usb_host_device_close(s_watch_cli, e.hdl);  /* cleanup do gone */
+                if (addr && s_gone_cb) {
+                    ESP_LOGI(TAG, "watcher: device addr %u desconectou",
+                             (unsigned)addr);
+                    s_gone_cb(addr);
+                }
+            }
+        }
+        if (s_watch_close_all) {
+            s_watch_close_all = false;
+            for (auto &sl : s_held)
+                if (sl.hdl) {
+                    usb_host_device_close(s_watch_cli, sl.hdl);
+                    sl.hdl = NULL; sl.addr = 0;
+                }
+        }
+        if (!alive) break;   /* teardown da lib: sai e libera o slot */
+    }
+    usb_host_client_deregister(s_watch_cli);
+    s_watch_cli = NULL;
     s_watch_task = NULL;
     vTaskDelete(NULL);
+}
+
+void usb_host_watcher_close_all(void)
+{
+    s_watch_close_all = true;
+    for (int i = 0; i < 30; i++) {   /* espera o loop soltar tudo (≤300 ms) */
+        bool any = false;
+        for (auto &sl : s_held) if (sl.hdl) { any = true; break; }
+        if (!any) break;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
 
 static volatile bool s_shutdown = false;      /* pede saída da lib task */
@@ -323,9 +386,11 @@ static void usb_host_lib_task(void *arg)
         return;
     }
     s_host_ready = true;   /* v5.12.0: 2º client (UAC) espera por isto */
-    /* v2.2.1: watcher de desconexão (client próprio p/ eventos de device) */
-    if (s_watch_task == NULL)
-        xTaskCreate(usb_watch_task, "usb_watch", 2048, NULL, 2, &s_watch_task);
+    /* v2.2.1/2.2.2: watcher de desconexão (client próprio + handles segurados) */
+    if (s_watch_task == NULL) {
+        if (!s_watch_q) s_watch_q = xQueueCreate(8, sizeof(wevt_t));
+        xTaskCreate(usb_watch_task, "usb_watch", 3072, NULL, 2, &s_watch_task);
+    }
     xTaskNotifyGive((TaskHandle_t)arg);
 
     /* NÃO sair em ALL_FREE por conta própria: barramento vazio é o
@@ -382,7 +447,8 @@ void usb_hid_keyboard_init(KeyPressCallback on_key_press, UsbKbdEventCallback on
 }
 
 void usb_hid_keyboard_prepare_sleep(void)
-{
+{    usb_host_watcher_close_all();   /* v2.2.2: solta handles antes do uninstall */
+
     if (!s_installed) return;
     ESP_LOGI(TAG, "teardown USB p/ standby...");
     s_host_ready = false;   /* host vai sumir; UAC não deve assumir o contrário */

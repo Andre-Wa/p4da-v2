@@ -13,6 +13,10 @@ typedef int esp_err_t;
 #define ESP_ERR_NVS_NO_FREE_PAGES 0x1100
 #define ESP_ERR_NVS_NEW_VERSION_FOUND 0x1101
 #define ESP_ERR_NVS_NOT_FOUND 0x1102
+#define ESP_ERR_INVALID_STATE 0x103
+#define ESP_ERR_TIMEOUT 0x107
+#define ESP_ERR_NOT_SUPPORTED 0x106
+#define ESP_ERR_NOT_FINISHED 0x109
 static inline const char *esp_err_to_name(esp_err_t e) { (void)e; return "ESP_ERR_STUB"; }
 
 /* IDF real: aborta com log em caso de erro. No syntaxcheck: avalia e ignora. */

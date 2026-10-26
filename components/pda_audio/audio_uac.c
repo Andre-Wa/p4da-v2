@@ -23,6 +23,7 @@
 #include "esp_heap_caps.h"
 
 #include <stdio.h>
+#include <stdlib.h>   /* calloc/free (vol_spawn, ctxs) */
 #include <string.h>
 #include <wchar.h>
 
@@ -58,6 +59,8 @@ static void *s_ctx = NULL;
  * o driver 1.5.0 derefere uac_iface NULL no próprio open
  * (uac_host.c:2171, Load access fault). O watcher de USB Host (pda_usb)
  * vê a desconexão de QUALQUER device e invalida aqui, antes do open. */
+static void set_state(const char *s);   /* fwd: definição abaixo dos eventos */
+
 static void uac_dev_gone(uint8_t addr)
 {
     if (!s_present || addr != s_addr) return;

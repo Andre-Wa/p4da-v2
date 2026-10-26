@@ -62,5 +62,28 @@ for src in main/*.cpp; do
     fi
 done
 
+# ---- estágio 2 (v2.2.2): FONTES DE COMPONENTES contra headers REAIS do
+# IDF 5.5.1 (usb/) baixados em real/ — pega drift de API que os stubs
+# escondem (foi assim que o watcher v2.2.1 passou errado: API inventada).
+# hid_host.h é stub derivado do uso v1 (repo não browsável); uac_host.h é
+# o real do componente 1.5.0 (cópia local).
+echo "== componentes vs headers IDF reais (usb) =="
+REAL=tools/syntaxcheck/real
+for src in components/pda_audio/audio_uac.c components/pda_usb/usb_hid_keyboard.cpp; do
+    log="/tmp/syntaxcheck_comp_$(basename "$src").log"
+    CC=g++; [ "${src##*.}" = c ] && CC=gcc
+    if $CC -std=gnu++20 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
+           -Wno-missing-field-initializers \
+           -I tools/syntaxcheck/stubs -I "$REAL" \
+           -I components/pda_board/include -I components/pda_script/include \
+           -I components/pda_power/include -I components/pda_usb/include \
+           -I components/pda_audio/include \
+           "$src" 2>"$log"; then
+        echo "  OK  $src (componente)"
+    else
+        echo "  FAIL $src"; sed 's/^/      /' "$log"; fail=1
+    fi
+done
+
 [ $fail -eq 0 ] && echo "SYNTAXCHECK: TUDO PASSOU" || echo "SYNTAXCHECK: FALHOU"
 exit $fail

@@ -30,11 +30,16 @@ bool usb_host_state_ready(void);
  * uac_host_device_open() num device que não existe: o driver 1.5.0
  * derefere uac_iface NULL dentro do próprio open (uac_host.c:2171,
  * Load access fault no campo de 2026-10-25). O client watcher abaixo
- * vê USB_HOST_EVENT_DEVICE_DISCONNECTED de QUALQUER device, aberto ou
- * não, e avisa antes de qualquer open.
+ * segura o handle de todo device enumerado (DEV_GONE do IDF 5.5 só avisa
+ * client com device ABERTO) e fecha+avisa no unplug — antes de qualquer
+ * open stale. v2.2.2: API real do IDF 5.5 (NEW_DEV/DEV_GONE, ccfg.async).
  */
 typedef void (*usb_host_dev_gone_cb)(uint8_t dev_addr);
 void usb_host_set_dev_gone_cb(usb_host_dev_gone_cb cb);
+
+/** Teardown do light sleep: solta os handles segurados pelo watcher
+ *  (usb_host_device_free_all espera todo close antes do uninstall). */
+void usb_host_watcher_close_all(void);
 
 #ifdef __cplusplus
 }

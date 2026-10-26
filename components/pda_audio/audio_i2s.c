@@ -282,7 +282,6 @@ static void do_play_local(const char *path)
              (unsigned long)w.sample_rate, (unsigned)w.channels);
     fseek(f, w.data_off, SEEK_SET);
     uint32_t left = w.data_len;
-    const uint32_t frame = (uint32_t)w.channels * 2u;   /* bytes por frame */
     uint8_t raw[4096];
     static int16_t out[4096];   /* estático: mono expande p/ 2x na pilha não */
     bool open_now = false;
@@ -322,7 +321,7 @@ static void do_play_local(const char *path)
         }
         int wfail = 0;
         for (;;) {
-            esp_err_t e = esp_codec_dev_write(s_dev, wptr, wbytes);
+            esp_err_t e = esp_codec_dev_write(s_dev, (void *)wptr, (int)wbytes);
             if (e == ESP_OK) break;
             if (s_stop_req) goto play_end;
             if (!s_paused && !s_suspend_req && ++wfail >= 5) {

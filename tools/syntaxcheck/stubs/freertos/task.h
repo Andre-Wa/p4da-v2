@@ -25,5 +25,8 @@ static inline BaseType_t xTaskCreateWithCaps(TaskFunction_t fn, const char *name
 }
 
 static inline void vTaskDelay(TickType_t t) { (void)t; }
+static inline BaseType_t xTaskNotifyGive(TaskHandle_t t) { (void)t; return pdPASS; }
+static inline uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t t)
+{ (void)clear; (void)t; return 1; }
 static inline void vTaskDelete(TaskHandle_t h) { (void)h; }
 static inline TaskHandle_t xTaskGetCurrentTaskHandle(void) { return NULL; }
