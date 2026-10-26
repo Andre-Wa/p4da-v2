@@ -18,6 +18,7 @@
 #include "audio_i2s.h"
 #include "audio_route.h"
 #include "audio_uac.h"
+#include "audio_vol.h"
 #include "storage_init.h"
 #include "usb_hid_keyboard.h"
 
@@ -62,6 +63,10 @@ void push_mus_ui(void)
     g_ui->set_mus_track(slint::SharedString(uac ? audio_uac_track()
                                                 : audio_i2s_track()));
     g_ui->set_mus_route(slint::SharedString(audio_route_label()));
+    const bool u = moment_uac();
+    g_ui->set_mus_volume((float)audio_vol_get(u ? AUDIO_VOL_UAC
+                                                : AUDIO_VOL_INTERNAL));
+    g_ui->set_mus_vol_label(slint::SharedString(u ? "USB" : "falante"));
 }
 
 void refresh_music_list(void)
@@ -138,12 +143,10 @@ void music_on_media_key(int act)
         audio_i2s_stop();
         break;
     case USB_MEDIA_VOL_UP:
-        if (moment_uac()) audio_uac_volume_step(+10);
-        else audio_i2s_volume_step(+10);
+        audio_vol_step(moment_uac() ? AUDIO_VOL_UAC : AUDIO_VOL_INTERNAL, +10);
         break;
     case USB_MEDIA_VOL_DOWN:
-        if (moment_uac()) audio_uac_volume_step(-10);
-        else audio_i2s_volume_step(-10);
+        audio_vol_step(moment_uac() ? AUDIO_VOL_UAC : AUDIO_VOL_INTERNAL, -10);
         break;
     case USB_MEDIA_MUTE:
         if (moment_uac()) audio_uac_mute_toggle();
@@ -174,17 +177,48 @@ void music_wire(AppWindow &ui)
     ui.on_mus_refresh([]() { activity(); refresh_music_list(); });
     ui.on_mus_pause([]() {
         activity();
-        if (moment_uac()) {
-            if (audio_uac_paused()) audio_uac_resume(); else audio_uac_pause();
+        const bool now_uac = audio_route_use_uac();
+        const bool uac_on = audio_uac_playing() || audio_uac_paused();
+        const bool loc_on = audio_i2s_playing() || audio_i2s_paused();
+        if (now_uac) {
+            if (uac_on) {
+                if (audio_uac_paused()) audio_uac_resume(); else audio_uac_pause();
+            } else {
+                /* pausado/tocando no FALANTE mas a rota agora é USB:
+                 * handover em vez de resumir no backend velho (C6). */
+                if (loc_on) audio_i2s_stop();
+                if (g_mus_cur >= 0) music_play_idx(g_mus_cur, true);
+            }
         } else {
-            if (audio_i2s_paused()) audio_i2s_resume(); else audio_i2s_pause();
+            if (loc_on) {
+                if (audio_i2s_paused()) audio_i2s_resume(); else audio_i2s_pause();
+            } else {
+                if (uac_on) audio_uac_stop();
+                if (g_mus_cur >= 0) music_play_idx(g_mus_cur, true);
+            }
         }
         push_mus_ui();
     });
     ui.on_mus_set_route([](int r) {
         activity();
         audio_route_set((audio_route_t)r);
+        /* v2.2.1 (bug de campo C6): a rota só valia no PRÓXIMO play —
+         * trocar com faixa ativa/pausada deixava o stream velho dono da
+         * saída (e "Seguir" retomava no backend antigo). Agora: para o
+         * backend que não é mais a rota e, se havia faixa ativa,
+         * reinicia a MESMA faixa no destino novo (handover). */
+        const bool now_uac = audio_route_use_uac();
+        const bool uac_on = audio_uac_playing() || audio_uac_paused();
+        const bool loc_on = audio_i2s_playing() || audio_i2s_paused();
+        if (uac_on && !now_uac) audio_uac_stop();
+        if (loc_on && now_uac) audio_i2s_stop();
         ESP_LOGI(TAG, "rota de saída: %s", audio_route_label());
+        if ((uac_on || loc_on) && g_mus_cur >= 0)
+            music_play_idx(g_mus_cur, true);   /* handover: recomeça na rota nova */
         push_mus_ui();
+    });
+    ui.on_mus_set_volume([](float v) {
+        activity();
+        audio_vol_set(moment_uac() ? AUDIO_VOL_UAC : AUDIO_VOL_INTERNAL, (int)v);
     });
 }

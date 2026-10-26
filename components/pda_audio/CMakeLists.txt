@@ -14,8 +14,11 @@ idf_component_register(
         "audio_i2s.c"
         "audio_uac.c"
         "audio_route.c"
+        "audio_vol.c"
     INCLUDE_DIRS "include"
     REQUIRES
+        nvs_flash               # audio_vol: volumes por fonte persistidos
+        esp_timer               # debounce de gravação do volume
         pda_board               # board_config.h (pinos I2S/PA) + board_i2c_bus()
         pda_usb                 # usb_host_state.h (host lib instalada p/ UAC)
         usb                     # usb/usb_host.h (client UAC)

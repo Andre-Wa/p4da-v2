@@ -46,8 +46,10 @@ void audio_uac_pause(void);
 void audio_uac_resume(void);
 
 /** v5.8: volume/mute via control transfer em task descartável
- *  (devices sem feature unit timeoutam ~5 s sem congelar UI/stream). */
-void audio_uac_volume_step(int delta);
+ *  (devices sem feature unit timeoutam ~5 s sem congelar UI/stream).
+ *  v2.2.1: volume é ABSOLUTO e quem dona o valor por fonte é audio_vol
+ *  (NVS + debounce); step virou chamada interna do audio_vol. */
+void audio_uac_volume_set(int pct);
 void audio_uac_mute_toggle(void);
 
 /** Basename da faixa atual ("" se nenhuma). */

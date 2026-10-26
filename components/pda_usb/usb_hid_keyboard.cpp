@@ -38,6 +38,50 @@ static UsbKbdEventCallback s_event_cb = nullptr;
 static TaskHandle_t s_lib_task = NULL;
 static volatile bool s_installed = false;
 static volatile bool s_host_ready = false;  /* v5.12.0: usb_host_install() OK (usb_host_state.h) */
+
+/* v2.2.1: watcher de desconexão (ver usb_host_state.h). Client próprio,
+ * task própria (2K), só processa eventos de connection/disconnection —
+ * não abre nada, não interfere nos clients dos drivers. */
+static usb_host_dev_gone_cb s_gone_cb = NULL;
+static TaskHandle_t s_watch_task = NULL;
+
+void usb_host_set_dev_gone_cb(usb_host_dev_gone_cb cb) { s_gone_cb = cb; }
+
+static void usb_watch_cb(usb_host_client_handle_t cli,
+                         const usb_host_client_event_msg_t *msg, void *arg)
+{
+    (void)cli; (void)arg;
+    if (msg->event == USB_HOST_EVENT_DEVICE_DISCONNECTED && s_gone_cb) {
+        ESP_LOGI(TAG, "watcher: device addr %u desconectou",
+                 (unsigned)msg->param.dev_info.dev_addr);
+        s_gone_cb(msg->param.dev_info.dev_addr);
+    }
+}
+
+static void usb_watch_task(void *arg)
+{
+    (void)arg;
+    usb_host_client_config_t ccfg = {};
+    ccfg.is_synchronous = false;
+    ccfg.max_nb_event_msg = 4;
+    ccfg.async_client_config.callback = usb_watch_cb;
+    ccfg.async_client_config.callback_arg = NULL;
+    usb_host_client_handle_t cli = NULL;
+    if (usb_host_client_register(&ccfg, &cli) != ESP_OK) {
+        ESP_LOGW(TAG, "watcher: client_register falhou — sem aviso de gone");
+        s_watch_task = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+    /* Padrão dos exemplos do IDF: callback + handle_events em task
+     * própria. Erro = teardown da lib (prepare_sleep): sai e libera o
+     * slot p/ o resume recriar (s_watch_task=NULL). */
+    while (usb_host_client_handle_events(cli, portMAX_DELAY) == ESP_OK) { }
+    usb_host_client_deregister(cli);
+    s_watch_task = NULL;
+    vTaskDelete(NULL);
+}
+
 static volatile bool s_shutdown = false;      /* pede saída da lib task */
 static SemaphoreHandle_t s_lib_done_sem = NULL; /* lib task avisou que saiu */
 
@@ -279,6 +323,9 @@ static void usb_host_lib_task(void *arg)
         return;
     }
     s_host_ready = true;   /* v5.12.0: 2º client (UAC) espera por isto */
+    /* v2.2.1: watcher de desconexão (client próprio p/ eventos de device) */
+    if (s_watch_task == NULL)
+        xTaskCreate(usb_watch_task, "usb_watch", 2048, NULL, 2, &s_watch_task);
     xTaskNotifyGive((TaskHandle_t)arg);
 
     /* NÃO sair em ALL_FREE por conta própria: barramento vazio é o

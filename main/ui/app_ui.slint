@@ -136,12 +136,15 @@ export component AppWindow inherits Window {
     in property <string> mus-state: "";
     in property <string> mus-track: "";
     in property <string> mus-route: "auto";
+    in-out property <float> mus-volume: 60;
+    in property <string> mus-vol-label: "falante";
     callback mus-play(int);
     callback mus-stop();
     callback mus-pause();
     callback mus-next();
     callback mus-refresh();
     callback mus-set-route(int);
+    callback mus-set-volume(float);
 
     // ---- config ----
     in-out property <float> cfg-brightness: 80;
@@ -362,6 +365,9 @@ export component AppWindow inherits Window {
                 state: root.mus-state;
                 track: root.mus-track;
                 route: root.mus-route;
+                volume <=> root.mus-volume;
+                vol-label: root.mus-vol-label;
+                volume-set(v) => { root.mus-set-volume(v); }
                 play(i) => { root.mus-play(i); }
                 stop => { root.mus-stop(); }
                 pause => { root.mus-pause(); }

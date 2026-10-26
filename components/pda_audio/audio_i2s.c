@@ -19,6 +19,7 @@
  */
 
 #include "audio_i2s.h"
+#include "audio_vol.h"
 #include "board_config.h"
 #include "touch_init.h"
 #include "wav_parse.h"
@@ -148,6 +149,7 @@ esp_err_t audio_i2s_init(void)
     s_dev = esp_codec_dev_new(&dev_cfg);
     if (!s_dev) { ESP_LOGE(TAG, "esp_codec_dev_new falhou"); return ESP_FAIL; }
 
+    s_vol = audio_vol_get(AUDIO_VOL_INTERNAL);   /* dono do valor: audio_vol */
     esp_codec_dev_set_out_vol(s_dev, (float)s_vol);
     s_beep_mtx = xSemaphoreCreateMutex();
     if (!s_beep_mtx) { ESP_LOGE(TAG, "sem RAM p/ mutex do beep"); return ESP_ERR_NO_MEM; }
@@ -178,7 +180,6 @@ void audio_i2s_set_vol(int pct)
     ESP_LOGI(TAG, "volume local %d%%", pct);
 }
 int audio_i2s_get_vol(void) { return s_vol; }
-void audio_i2s_volume_step(int delta) { audio_i2s_set_vol(s_vol + delta); }
 void audio_i2s_mute_toggle(void)
 {
     if (s_muted) {

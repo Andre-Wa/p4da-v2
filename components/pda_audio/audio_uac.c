@@ -12,6 +12,7 @@
 
 #include "audio_uac.h"
 #include "usb_host_state.h"
+#include "audio_vol.h"
 #include "wav_parse.h"      /* SOM.1 (v2.2.0): parser compartilhado c/ player local */
 #include "usb/uac_host.h"
 
@@ -49,6 +50,23 @@ static bool s_muted = false;
 static uint8_t s_addr = 0, s_iface = 0;
 static audio_uac_event_cb s_cb = NULL;
 static void *s_ctx = NULL;
+
+/* v2.2.1 (crash de campo 2026-10-25): o driver UAC só entrega
+ * DISCONNECTED para device ABERTO; um speaker conectado mas nunca
+ * usado (rota no falante) e removido deixava s_present stale=true — e o
+ * play seguinte chamava uac_host_device_open() em device inexistente:
+ * o driver 1.5.0 derefere uac_iface NULL no próprio open
+ * (uac_host.c:2171, Load access fault). O watcher de USB Host (pda_usb)
+ * vê a desconexão de QUALQUER device e invalida aqui, antes do open. */
+static void uac_dev_gone(uint8_t addr)
+{
+    if (!s_present || addr != s_addr) return;
+    ESP_LOGW(TAG, "watcher: speaker UAC (addr %u) saiu — presença invalidada",
+             addr);
+    s_present = false;
+    s_stop_req = true;      /* loop de write sai no próximo chunk */
+    set_state("sem dispositivo");
+}
 
 static void notify(void) { if (s_cb) s_cb(s_ctx); }
 static void set_state(const char *s)
@@ -166,6 +184,9 @@ static void do_play(const char *path)
     }
     if (!s_present) { fclose(f); set_state("sem dispositivo"); return; }
 
+    if (!s_present) {   /* v2.2.1: re-check na borda do open (janela de raça) */
+        fclose(f); set_state("sem dispositivo"); return;
+    }
     uac_host_device_config_t dcfg = {
         .addr = s_addr, .iface_num = s_iface,
         .buffer_size = 16384, .buffer_threshold = 4096,
@@ -335,6 +356,8 @@ static void init_task(void *arg)
 esp_err_t audio_uac_init(void)
 {
     if (s_q) return ESP_OK;
+    usb_host_set_dev_gone_cb(uac_dev_gone);   /* v2.2.1: presença honesta */
+    s_vol_pct = audio_vol_get(AUDIO_VOL_UAC); /* dono do valor: audio_vol */
     s_q = xQueueCreate(2, sizeof(cmd_t));
     if (!s_q) return ESP_ERR_NO_MEM;
     s_evtq = xQueueCreate(4, sizeof(evt_t));
@@ -359,7 +382,7 @@ const char *audio_uac_dev_name(void) { return s_devname; }
 /* ---------------- volume/mute (v5.8) ----------------
  * Control transfer de volume em device sem feature unit (H3S) timeouta
  * em ~5 s: NUNCA no caminho do stream/UI — task descartável própria. */
-typedef struct { int delta; bool mute; } volcmd_t;
+typedef struct { int pct; bool mute; } volcmd_t;
 
 static void vol_task(void *arg)
 {
@@ -376,9 +399,7 @@ static void vol_task(void *arg)
             }
         }
     } else {
-        s_vol_pct += c->delta;
-        if (s_vol_pct < 0) s_vol_pct = 0;
-        if (s_vol_pct > 100) s_vol_pct = 100;
+        s_vol_pct = c->pct;
         if (dev && s_playing && !s_vol_bad) {
             /* H3S (e clones Jieli?): índice 100% da curva = MUTE no
              * device (relato 17ª rodada: som some em 100%, volta em
@@ -411,16 +432,22 @@ static void vol_task(void *arg)
     vTaskDelete(NULL);
 }
 
-static void vol_spawn(int delta, bool mute)
+static void vol_spawn(int pct, bool mute)
 {
     volcmd_t *c = calloc(1, sizeof(*c));
     if (!c) return;
-    c->delta = delta; c->mute = mute;
+    c->pct = pct; c->mute = mute;
     if (xTaskCreate(vol_task, "au_vol", 3072, c, 3, NULL) != pdPASS) free(c);
 }
 
-void audio_uac_volume_step(int delta) { vol_spawn(delta, false); }
-void audio_uac_mute_toggle(void) { vol_spawn(0, true); }
+void audio_uac_volume_set(int pct)
+{
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    s_vol_pct = pct;      /* cache p/ aplicar no próximo start */
+    vol_spawn(pct, false);
+}
+void audio_uac_mute_toggle(void) { vol_spawn(s_vol_pct, true); }
 
 bool audio_uac_playing(void) { return s_playing; }
 bool audio_uac_paused(void) { return s_paused; }

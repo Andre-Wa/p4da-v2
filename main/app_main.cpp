@@ -35,6 +35,7 @@
 #include "power_mgmt.h"
 #include "usb_hid_keyboard.h"   /* teardown/resume do HID no standby */
 #include "wifi_net.h"           /* L2: STA+NTP via C6 */
+#include "audio_vol.h"          /* L3: dono dos volumes por fonte */
 #include "audio_i2s.h"          /* L3: falante local (beep + player) */
 #include "audio_uac.h"          /* L3: player USB (UAC1) */
 
@@ -151,6 +152,7 @@ extern "C" void app_main(void)
      * por replace sem assert — sem audio_uac_init() o driver NUNCA
      * instala e o log fica mudo. Eventos dos dois backends refrescam a
      * tela Música via ui_post (regra 5). */
+    audio_vol_init();           /* NVS de volumes antes dos backends lerem */
     audio_i2s_init();
     audio_i2s_set_event_cb([](void *) {
         ui_post([]() { push_mus_ui(); });

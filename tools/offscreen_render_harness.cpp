@@ -157,6 +157,8 @@ int main(int argc, char **argv)
         ui->set_mus_state(slint::SharedString("tocando"));
         ui->set_mus_track(slint::SharedString("trilha_02.wav"));
         ui->set_mus_route(slint::SharedString("auto"));
+        ui->set_mus_volume(62.f);
+        ui->set_mus_vol_label(slint::SharedString("USB"));
         lines = { "", "", "" };
         styles = { 9, 9, 9 };
     } else if (mode == "settings" || mode == "settings2") {

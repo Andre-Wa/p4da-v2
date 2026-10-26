@@ -327,3 +327,42 @@ Validação: wav A–F OK · syntaxcheck 13/13 · cfg/uigate/lua-bind/md
 verdes · slint limpo · 13 renders (music incl.). Áudio em si = aceite
 de HW (checklist da release): é o subsistema com mais quirks de campo da
 v1 — NADA dele é stubável com confiança no host.
+
+---
+
+# v2.2.1 — hotfix de campo da L3 (rota/presença/volume)
+
+## F16 — três achados da rodada C1–C15 (2026-10-25)
+
+**1. Bug de rota (C6):** trocar a rota com faixa ativa/pausada não movia
+o stream — "Seguir" retomava no backend velho (a rota só valia no
+próximo play, decisão F14 mal comunicada pela UI). v2.2.1: handover —
+`mus-set-route` para o backend que saiu da rota e reinicia a mesma faixa
+no destino novo; `mus-pause` com backend velho pausado faz handover em
+vez de resume. Regra nova escrita na tela: "trocar rota com faixa ativa
+reinicia nela".
+
+**2. Crash no driver UAC (Load access fault, uac_host.c:2171):** causa
+raiz = **presença stale**. O driver UAC 1.5.0 só entrega DISCONNECTED no
+callback POR DEVICE (device aberto); speaker conectado mas nunca usado
+(rota no falante) e removido deixava `s_present=true`; o play seguinte
+chamava `uac_host_device_open()` em device inexistente e o driver
+derefere `uac_iface` NULL no próprio open (NOT_FOUND → crash). Fix em
+duas camadas: (a) **watcher de USB Host** novo em pda_usb
+(`usb_watch_task`, client próprio 2K): vê
+`USB_HOST_EVENT_DEVICE_DISCONNECTED` de QUALQUER device (aberto ou não)
+e invalida a presença no audio_uac antes de qualquer open; (b) re-check
+de `s_present` na borda do open (janela de raça). O watcher morre e se
+recria no teardown/resume do light sleep (s_watch_task=NULL na saída).
+
+**3. Volume na UI (pedido C7):** módulo `audio_vol` dono dos volumes POR
+FONTE (falante/USB) com NVS (`pdaaudio`: vol_i/vol_u) e debounce de 3 s
++ trailing (slider não martela a flash — padrão do brilho M4.12);
+slider 0–100 na tela Música com rótulo da fonte; media keys passam por
+`audio_vol_step` (persistem, antes eram step sem dono); backends viraram
+caminhos de APLICAÇÃO (`audio_i2s_set_vol`/`audio_uac_volume_set`
+absoluto).
+
+Validação: syntaxcheck 13/13 · suíte host verde (wav A–F) · slint limpo ·
+13 renders (music c/ slider). Crash e handover NÃO são stubáveis no host
+(driver USB/raça) — aceite no CHECKLIST_HW_v2.2.1.md (R1–R6).
