@@ -11,6 +11,7 @@ gcc/g++, lua5.4 (+dev) e, p/ o render, Slint-cpp 1.12.1 + Qt6/xkb/gbm.
 |---|---|---|
 | cfg | `components/pda_script/pda_config.c` | parse/serialize/sanitize de `system.lua`, censo/FNV, sombra NVS, clamp de sanidade, ordem das seções (a v1 quebrou aqui: INT_MAX, mídia insana) |
 | uigate | `main/ui_gate.h` | UI-LOOP-GATE: acumular antes do loop, flush FIFO, idempotência, concorrência sem perda (1308 posts), post aninhado, cenário do crash da 15ª rodada |
+| audio | `audio_tags.c`, `audio_playlist.c`, `audio_decode.c` | tags ID3v2.4 do mp3 REAL do template + LIST/INFO sintético + sem-tag; m3u (comentários/#EXT/relativos/absolutos/skips); pcm_src WAV exato e **MP3 real decodificado no host** (~88k frames/2 s); recusas (22050, lixo) |
 | wav | `components/pda_audio/wav_parse.c` | parser SOM.1 contra WAVs sintéticos: canônico off/len, fmt estendido, LIST ímpar+FACT (pad de word), não-PCM rejeitado, RIFF≠WAVE/fmt truncado, mono 22050 (recusa de taxa é do player) |
 | lua-bind | `components/pda_script/lua_runtime.c` + `sdcard-template/pda/scripts/logger_exemplo.lua` | VM protegida no Lua 5.4 (shim p/ lua_newstate de 3 args), bindings fs/mkdir/sleep, e o script REAL end-to-end: CSV criado (header+8 linhas crescentes), continuação sem duplicar header, falha graciosa sem diretório |
 

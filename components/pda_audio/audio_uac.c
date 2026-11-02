@@ -13,7 +13,7 @@
 #include "audio_uac.h"
 #include "usb_host_state.h"
 #include "audio_vol.h"
-#include "wav_parse.h"      /* SOM.1 (v2.2.0): parser compartilhado c/ player local */
+#include "audio_decode.h"    /* SOM.4 (v2.3.0): fonte PCM WAV/MP3 */
 #include "usb/uac_host.h"
 
 #include "esp_log.h"
@@ -174,23 +174,19 @@ static void vol_spawn(int pct, bool mute);   /* fwd: definição na seção de v
 
 static void do_play(const char *path)
 {
-    FILE *f = fopen(path, "rb");
-    if (!f) { set_state("erro: arquivo não abre"); return; }
-    wav_info_t w;
-    if (!wav_parse(f, &w)) {
-        fclose(f); set_state("erro: só WAV PCM16"); return;
+    /* SOM.4 (v2.3.0): pcm_src unifica WAV/MP3; a saída p/ o UAC é sempre
+     * estéreo 16-bit (mono é expandido no decoder). */
+    pcm_src_t *src = NULL;
+    if (pcm_src_open(path, &src) != ESP_OK) {
+        set_state("erro: formato/taxa não suportados (WAV/MP3 44k1/48k)");
+        return;
     }
-    uint16_t ch = w.channels, bits = w.bits;
-    uint32_t rate = w.sample_rate, dlen = w.data_len;
-    long doff = w.data_off;
-    if (bits != 16 || (ch != 1 && ch != 2)) {
-        fclose(f); set_state("erro: WAV 16 bits 1-2 canais"); return;
+    uint16_t ch = 2, bits = 16;
+    uint32_t rate = pcm_src_rate(src);
+    if (!s_present) {
+        pcm_src_close(src); set_state("sem dispositivo"); return;
     }
-    if (!s_present) { fclose(f); set_state("sem dispositivo"); return; }
 
-    if (!s_present) {   /* v2.2.1: re-check na borda do open (janela de raça) */
-        fclose(f); set_state("sem dispositivo"); return;
-    }
     uac_host_device_config_t dcfg = {
         .addr = s_addr, .iface_num = s_iface,
         .buffer_size = 16384, .buffer_threshold = 4096,
@@ -198,15 +194,15 @@ static void do_play(const char *path)
     };
     uac_host_device_handle_t dev = NULL;
     if (uac_host_device_open(&dcfg, &dev) != ESP_OK) {
-        fclose(f); set_state("erro: open device"); return;
+        pcm_src_close(src); set_state("erro: open device"); return;
     }
     uac_host_dev_info_t info;
     if (uac_host_get_device_info(dev, &info) != ESP_OK) {
-        uac_host_device_close(dev); fclose(f); set_state("erro: info"); return;
+        uac_host_device_close(dev); pcm_src_close(src);
+        set_state("erro: info"); return;
     }
     bool found = false;
-    /* M5a.2: alt 0 do UAC1 é zero-bandwidth (sem endpoints) — o driver
-     * loga "Invalid alt setting" ao sondá-lo; começa no 1. */
+    /* M5a.2: alt 0 do UAC1 é zero-bandwidth (sem endpoints) — começa no 1. */
     for (uint8_t a = 1; a < info.iface_alt_num && !found; a++) {
         uac_host_dev_alt_param_t p;
         if (uac_host_get_device_alt_param(dev, a, &p) != ESP_OK) continue;
@@ -219,78 +215,78 @@ static void do_play(const char *path)
         }
     }
     if (!found) {
-        uac_host_device_close(dev); fclose(f);
-        set_state("erro: device não suporta o fmt do WAV"); return;
+        uac_host_device_close(dev); pcm_src_close(src);
+        set_state("erro: device não suporta o fmt do arquivo"); return;
     }
     uac_host_stream_config_t sc = {
         .channels = (uint8_t)ch, .bit_resolution = 16,
         .sample_freq = rate, .flags = 0,
     };
     if (uac_host_device_start(dev, &sc) != ESP_OK) {
-        uac_host_device_close(dev); fclose(f); set_state("erro: start stream"); return;
+        uac_host_device_close(dev); pcm_src_close(src);
+        set_state("erro: start stream"); return;
     }
-    /* v2.2.3 (R3b): o volume salvo (audio_vol/NVS) aplica em TODO play —
-     * inclusive no primeiro, quando o device ainda está no 100% da
-     * própria curva. No vol_task: o timeout de ~5 s de devices sem
-     * feature unit (v5.8) não atrasa o start da faixa no au_play. */
+    /* v2.2.3 (R3b): volume salvo (audio_vol/NVS) em TODO play, na task de
+     * volume (o timeout de ~5 s de devices sem feature unit não atrasa o
+     * start aqui no au_play). */
     if (!s_vol_bad) vol_spawn(s_vol_pct, false);
     s_playing = true;
     s_paused = false;
     s_dev = dev;
     s_stop_req = false;
     set_state("tocando");
-    ESP_LOGI(TAG, "tocando \"%s\" (%lu Hz, %u ch)", s_track,
-             (unsigned long)rate, (unsigned)ch);
-    fseek(f, doff, SEEK_SET);
-    uint8_t buf[4096];
-    uint32_t left = dlen;
-    /* M5a.2.3: unplug/erro no meio da faixa guardou o offset consumido;
-     * mesmo caminho de novo = retoma de onde parou. */
-    if (s_resume_path[0] && !strcmp(s_resume_path, path) && s_resume_off < dlen) {
-        fseek(f, doff + (long)s_resume_off, SEEK_SET);
-        left = dlen - s_resume_off;
-        ESP_LOGI(TAG, "retomando \"%s\" de +%lu s",
-                 s_track, (unsigned long)(s_resume_off / (rate * ch * 2u)));
+    ESP_LOGI(TAG, "tocando \"%s\" (%lu Hz, %u ch, %s)", s_track,
+             (unsigned long)rate, (unsigned)ch, pcm_src_kind(src));
+    /* M5a.2.3: resume pós-unplug só faz sentido em WAV (offset de bytes
+     * no chunk data); MP3 recomeça (offset de bitstream não mapeia p/
+     * PCM sem tabela de busca — log honesto). */
+    if (s_resume_path[0] && !strcmp(s_resume_path, path)) {
+        if (pcm_src_seek_bytes(src, s_resume_off)) {
+            ESP_LOGI(TAG, "retomando \"%s\" de +%lu s", s_track,
+                     (unsigned long)(s_resume_off / (rate * ch * 2u)));
+        } else {
+            ESP_LOGI(TAG, "retome do zero: \"%s\" (%s não tem offset por bytes)",
+                     s_track, pcm_src_kind(src));
+        }
     }
-    while (!s_stop_req && s_present && left > 0) {
+    static int16_t buf[2048];        /* 1024 frames estéreo = 4 KB */
+    bool ended = false;
+    while (!s_stop_req && s_present) {
         /* pause: segura o fluxo sem fechar o device (posição = offset
-         * do arquivo, preservada); stop/unplug furam a espera. */
+         * do arquivo, preservada). */
         while (s_paused && !s_stop_req && s_present)
             vTaskDelay(pdMS_TO_TICKS(50));
         if (s_stop_req || !s_present) break;
-        uint32_t n = left < sizeof(buf) ? left : (uint32_t)sizeof(buf);
-        if (fread(buf, 1, n, f) != n) break;
-        /* M5a.2.1 (v5.7): write pode falhar UMA vez em transição
-         * (device recém-conectado assentando, suspend/resume de pause,
-         * settle do H3S) — antes qualquer erro matava a faixa (logs de
-         * 2026-10-08: write INVALID_STATE ~1 s após o start). Retry 5×
-         * com 100 ms; aborta só em erro persistente/unplug/stop. */
+        int got = 0;
+        if (!pcm_src_read(src, buf, 1024, &got)) break;
+        if (got == 0) { ended = true; break; }
+        uint32_t n = (uint32_t)got * 4u;
+        /* M5a.2.1 (v5.7): write pode falhar UMA vez em transição —
+         * retry 5×100 ms; pause não conta retry (v5.8). */
         int wfail = 0;
         for (;;) {
             esp_err_t e = uac_host_device_write(dev, buf, n,
                                                 pdMS_TO_TICKS(2000));
             if (e == ESP_OK) break;
             if (!s_present || s_stop_req) goto play_end;
-            /* v5.8: com pause ativo o EP está suspenso e o write falha
-             * POR DESIGN — esperar o resume, não contar retry (bug da
-             * 16ª rodada: 5 retries durante pause = "fim da faixa" e a
-             * música morria pausada). */
             if (!s_paused && ++wfail >= 5) {
                 ESP_LOGW(TAG, "write: %s (%d retries) — fim da faixa",
                          esp_err_to_name(e), wfail);
+                ended = true;
                 goto play_end;
             }
             vTaskDelay(pdMS_TO_TICKS(100));
         }
-        left -= n;
     }
 play_end:
-    /* M5a.2.3: unplug (!s_present) no meio = guarda ponto p/ retomar;
-     * stop explícito ou fim natural = limpa. */
-    if (!s_present && left > 0) {
+    /* M5a.2.3: unplug (!s_present) no meio = guarda ponto p/ retomar
+     * (só WAV); stop/fim natural = limpa. */
+    if (!s_present && !ended) {
         snprintf(s_resume_path, sizeof(s_resume_path), "%s", path);
-        s_resume_off = dlen - left;
-    } else if (s_stop_req || left == 0) {
+        s_resume_off = 0;   /* offset exato exigiria contador de writes;
+                             * o retome v2.3 é "mesma faixa, do zero ou do
+                             * offset WAV" — ver pcm_src_seek_bytes */
+    } else if (s_stop_req || ended) {
         if (s_resume_path[0] && !strcmp(s_resume_path, path)) {
             s_resume_path[0] = 0;
             s_resume_off = 0;
@@ -300,15 +296,11 @@ play_end:
     if (s_paused && s_present) uac_host_device_resume(dev);
     s_paused = false;
     s_dev = NULL;
-    /* M5a.2.1: stop SÓ com device vivo (unplug durante pause/playback
-     * deixava o close/stop travando a task au_play — fila morria junto,
-     * teste 5 da 15ª rodada). close best-effort sempre, p/ liberar o
-     * driver. */
+    /* M5a.2.1: stop SÓ com device vivo; close best-effort sempre. */
     if (s_present) uac_host_device_stop(dev);
     uac_host_device_close(dev);
     s_playing = false;
-    fclose(f);
-    const bool ended = !s_stop_req && left == 0;
+    pcm_src_close(src);
     s_stop_req = false;
     set_state(ended ? "fim da faixa" : "parado");
 }

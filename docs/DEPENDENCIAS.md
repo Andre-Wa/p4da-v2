@@ -29,6 +29,12 @@ incompatibilidade com IDF 5.5.1 (auditoria da v1 contra o registry).
 `idf: ">=5.3,<6.0"` em todos os yml: IDF 6.x recusa P4 rev <3.1 (chip
 ES) e muda APIs junto (st7701 2.x etc.).
 
+## Vendorizado (não vem do registry)
+
+| Item | Versão/licença | Onde | Por quê |
+|---|---|---|---|
+| minimp3 | master 2026-10 (CC0) | `components/pda_audio/minimp3/` | decoder MP3 fixo-ponto header-only; alternativa (esp-adf/esp_audio) traria um framework inteiro contra a arquitetura de componentes mínimos; CC0 = sem obrigação de licença |
+
 ## Contratos de ABI/versão que NÃO se tocam sem medição
 
 1. **`espressif/lua` 5.5 compila a VM com `LUA_32BITS=1` como define

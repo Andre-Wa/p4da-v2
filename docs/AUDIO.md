@@ -1,3 +1,10 @@
+> **Nota v2 (v2.3.0):** SOM.4 IMPLEMENTADO: `audio_decode.[ch]` (pcm_src
+> WAV+MP3 via minimp3 vendorizado CC0 em `minimp3/`), `audio_tags.[ch]`
+> (ID3v2.2/3/4 + LIST/INFO), `audio_playlist.[ch]` (.m3u/.m3u8); os dois
+> players consomem pcm_src; fila de reprodução na tela Música; resume
+> pós-unplug só WAV (MP3 recomeça — log honesto). Teste de host:
+> host_audio_test.c (tags reais+sintéticas, m3u, decode MP3 real).
+>
 > **Nota v2 (L3, v2.2.0):** carregado do p4da-v1 v5.16.2. O código dono
 > destas decisões vive em `components/pda_audio/` (v1: `main/audio_i2s.c`
 > + `main/audio_uac.c`). O plano SOM.1–SOM.3 abaixo está IMPLEMENTADO na

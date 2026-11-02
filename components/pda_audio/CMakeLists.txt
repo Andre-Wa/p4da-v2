@@ -15,7 +15,10 @@ idf_component_register(
         "audio_uac.c"
         "audio_route.c"
         "audio_vol.c"
-    INCLUDE_DIRS "include"
+        "audio_decode.c"
+        "audio_tags.c"
+        "audio_playlist.c"
+    INCLUDE_DIRS "include" "minimp3"
     REQUIRES
         nvs_flash               # audio_vol: volumes por fonte persistidos
         esp_timer               # debounce de gravação do volume

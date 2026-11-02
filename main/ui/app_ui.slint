@@ -135,6 +135,7 @@ export component AppWindow inherits Window {
     in property <string> mus-dev: "";
     in property <string> mus-state: "";
     in property <string> mus-track: "";
+    in property <string> mus-meta: "";
     in property <string> mus-route: "auto";
     in-out property <float> mus-volume: 60;
     in property <string> mus-vol-label: "falante";
@@ -364,6 +365,7 @@ export component AppWindow inherits Window {
                 dev: root.mus-dev;
                 state: root.mus-state;
                 track: root.mus-track;
+                meta: root.mus-meta;
                 route: root.mus-route;
                 volume <=> root.mus-volume;
                 vol-label: root.mus-vol-label;

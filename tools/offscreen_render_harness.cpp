@@ -155,7 +155,8 @@ int main(int argc, char **argv)
         ui->set_mus_tracks(mk({"abertura.wav", "trilha_02.wav", "vocal_44k1.wav"}));
         ui->set_mus_dev(slint::SharedString("auto — FiiO DAC"));
         ui->set_mus_state(slint::SharedString("tocando"));
-        ui->set_mus_track(slint::SharedString("trilha_02.wav"));
+        ui->set_mus_track(slint::SharedString("Drum Show"));
+        ui->set_mus_meta(slint::SharedString("twenty one pilots — Breach"));
         ui->set_mus_route(slint::SharedString("auto"));
         ui->set_mus_volume(62.f);
         ui->set_mus_vol_label(slint::SharedString("USB"));

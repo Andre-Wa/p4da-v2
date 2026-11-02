@@ -395,3 +395,53 @@ Wi-Fi (R5): sem mudança de código — ver análise no commit/checklist
 (link marginal -84/-86 dBm com perda probabilística de EAPOL; o manager
 comportou-se como projetado: rotacionou, marcou, relaxou e reconectou no
 boot seguinte ao mesmo RSSI).
+
+---
+
+# v2.3.0 — SOM.4: MP3 + playlists + metadados (+ pin de wifi_remote)
+
+## F22 — pedidos de campo da rodada v2.2.3 (2026-11-02)
+
+Usuário: WAV de 36 MB vs MP3 de 7 MB no cartão; pediu formatos, listas
+e metadados "dependendo da complexidade, no próximo patch ou roadmap".
+Decisão: **no próximo patch** — os três cabem em módulos puros testáveis
+no host, sem framework (esp-adf/esp_audio recusado: arrastaria um
+pipeline inteiro contra a arquitetura de componentes mínimos).
+
+- `audio_decode.[ch]` (pcm_src): WAV PCM16 e MP3 atrás da MESMA
+  interface p/ os dois backends; minimp3 vendorizado (CC0, header-only,
+  `MINIMP3_IMPLEMENTATION` no .c); saída sempre estéreo 16-bit (mono
+  duplicado no módulo); 44k1/48k (como no SOM.1); decode chunk-a-chunk
+  (nada de bufferizar a faixa — é exatamente a queixa dos 36 MB);
+  `pcm_src_seek_bytes` só WAV (resume pós-unplug de MP3 = recomeço, com
+  log honesto).
+- `audio_tags.[ch]`: ID3v2.2/2.3/2.4 (TIT2/TPE1/TALB + sinônimos v2.2;
+  latin1/utf8 direto, utf16 best-effort) e WAV LIST/INFO
+  (INAM/IART/IPRD). Sem tag = vazio → UI cai no basename (comportamento
+  anterior).
+- `audio_playlist.[ch]`: .m3u/.m3u8 (comentários e #EXT* ignorados,
+  relativos à pasta da lista, absolutos aceitos, inexistentes contados
+  como skipped).
+- `screen_music.cpp` reescrito: fila de reprodução (tap em faixa = fila
+  na ordem da lista; tap em .m3u = fila da lista; Próxima/media NEXT
+  navegam a fila), display por título do tag, linha nova de
+  artista/álbum (mus-meta).
+- Players (`audio_i2s`/`audio_uac`) refatorados p/ pcm_src (o WAV-path
+  antigo saiu de dentro deles; wav_parse segue como base do pcm_src e do
+  host test).
+- Template: `music/teste_tom.mp3` (ffmpeg: 2 s de 440 Hz, 128k, tags
+  ID3v2.4 — é o arquivo REAL que o host_audio_test decodifica).
+- `esp_wifi_remote` pinado `==1.6.5` (era o único ">= " de rede; lock de
+  campo de 2026-10; política "tudo pinado").
+
+### Bugs achados pelo host test nesta fase (antes do alvo)
+- audio_tags_read passava o FILE já avançado 4 bytes aos parsers (tags
+  sempre vazias);
+- tolerância de frames do MP3 ignorava padding do encoder (91008 vs
+  88200);
+- (na refatoragem) anchor de replace duplicou o do_play_local do i2s —
+  pego pelo syntaxcheck antes de qualquer build.
+
+Validação: AUDIO TEST A–G OK (decode MP3 real no host) · wav A–F ·
+cfg/uigate/lua · syntaxcheck 13/13 + 5 componentes · slint limpo · 13
+renders. MP3 no alvo = aceite M1–M6 do checklist v2.3.0.

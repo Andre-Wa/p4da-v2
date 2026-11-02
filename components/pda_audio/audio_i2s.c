@@ -22,7 +22,7 @@
 #include "audio_vol.h"
 #include "board_config.h"
 #include "touch_init.h"
-#include "wav_parse.h"
+#include "audio_decode.h"
 
 #include "driver/i2s_std.h"
 #include "esp_codec_dev.h"
@@ -258,35 +258,22 @@ esp_err_t audio_i2s_beep(int ms)
 /* ---------------- player local (SOM.1) ---------------- */
 static void do_play_local(const char *path)
 {
-    FILE *f = fopen(path, "rb");
-    if (!f) { set_state("erro: arquivo não abre"); return; }
-    wav_info_t w;
-    if (!wav_parse(f, &w)) {
-        fclose(f); set_state("erro: só WAV PCM16"); return;
-    }
-    if (w.bits != 16 || (w.channels != 1 && w.channels != 2)) {
-        fclose(f); set_state("erro: WAV 16 bits 1-2 canais"); return;
-    }
-    if (w.sample_rate != 44100 && w.sample_rate != 48000) {
-        fclose(f);
-        set_state("erro: taxa não suportada (44k1/48k no round 1)");
-        ESP_LOGW(TAG, "WAV %lu Hz — recusado no round 1 do SOM.1",
-                 (unsigned long)w.sample_rate);
+    /* SOM.4 (v2.3.0): fonte de PCM unificada (WAV PCM16 + MP3 minimp3). */
+    pcm_src_t *src = NULL;
+    if (pcm_src_open(path, &src) != ESP_OK) {
+        set_state("erro: formato/taxa não suportados (WAV/MP3 44k1/48k)");
         return;
     }
     s_playing = true;
     s_paused = false;
     s_stop_req = false;
     set_state("tocando");
-    ESP_LOGI(TAG, "falante: \"%s\" (%lu Hz, %u ch)", s_track,
-             (unsigned long)w.sample_rate, (unsigned)w.channels);
-    fseek(f, w.data_off, SEEK_SET);
-    uint32_t left = w.data_len;
-    uint8_t raw[4096];
-    static int16_t out[4096];   /* estático: mono expande p/ 2x na pilha não */
+    ESP_LOGI(TAG, "falante: \"%s\" (%lu Hz, %s)", s_track,
+             (unsigned long)pcm_src_rate(src), pcm_src_kind(src));
+    static int16_t buf[2048];        /* 1024 frames estéreo = 4 KB */
     bool open_now = false;
 
-    while (!s_stop_req && left > 0) {
+    while (!s_stop_req) {
         /* pause: solta o codec (beep passa livre) e espera */
         while (s_paused && !s_stop_req) {
             if (open_now) { chan_close(); open_now = false; }
@@ -302,26 +289,14 @@ static void do_play_local(const char *path)
             if (s_stop_req) break;
         }
         if (s_stop_req) break;
-        if (!open_now) { chan_open(w.sample_rate); open_now = true; }
+        if (!open_now) { chan_open(pcm_src_rate(src)); open_now = true; }
 
-        uint32_t n = left < sizeof(raw) ? left : (uint32_t)sizeof(raw);
-        if (w.channels == 1) n = (n / 4) * 2;      /* lê meio p/ expandir */
-        if (fread(raw, 1, n, f) != n) break;
-        uint32_t wbytes = n;
-        const void *wptr = raw;
-        if (w.channels == 1) {
-            for (uint32_t i = 0; i < n / 2; i++) {
-                int16_t v = (int16_t)((uint16_t)raw[2 * i] |
-                                      ((uint16_t)raw[2 * i + 1] << 8));
-                out[2 * i] = v;
-                out[2 * i + 1] = v;
-            }
-            wptr = out;
-            wbytes = n * 2;
-        }
+        int got = 0;
+        if (!pcm_src_read(src, buf, 1024, &got)) break;
+        if (got == 0) break;                       /* EOF limpo */
         int wfail = 0;
         for (;;) {
-            esp_err_t e = esp_codec_dev_write(s_dev, (void *)wptr, (int)wbytes);
+            esp_err_t e = esp_codec_dev_write(s_dev, (void *)buf, got * 4);
             if (e == ESP_OK) break;
             if (s_stop_req) goto play_end;
             if (!s_paused && !s_suspend_req && ++wfail >= 5) {
@@ -331,14 +306,13 @@ static void do_play_local(const char *path)
             }
             vTaskDelay(pdMS_TO_TICKS(100));
         }
-        left -= n;
     }
 play_end:
     if (open_now) chan_close();
     s_playing = false;
     s_paused = false;
-    fclose(f);
-    const bool ended = !s_stop_req && left == 0;
+    pcm_src_close(src);
+    const bool ended = !s_stop_req;
     s_stop_req = false;
     set_state(ended ? "fim da faixa" : "parado");
 }

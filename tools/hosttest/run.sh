@@ -57,3 +57,10 @@ gcc -std=gnu11 -Wall -Wextra -Wno-unused-parameter     -I components/pda_audio/i
 
 echo "--- rodando /tmp/wavtest_bin ---"
 /tmp/wavtest_bin
+
+# ---- AUDIO (SOM.4): tags ID3/LIST + m3u + pcm_src (WAV e o MP3 REAL do
+# template, decodificado no host pelo minimp3 vendorizado). ----
+gcc -std=gnu11 -Wall -Wextra -Wno-unused-parameter     -I tools/hosttest/stubs -I components/pda_audio/include -I components/pda_audio/minimp3     components/pda_audio/wav_parse.c components/pda_audio/audio_decode.c     components/pda_audio/audio_tags.c components/pda_audio/audio_playlist.c     tools/hosttest/host_audio_test.c     -o /tmp/audiotest_bin
+
+echo "--- rodando /tmp/audiotest_bin ---"
+/tmp/audiotest_bin

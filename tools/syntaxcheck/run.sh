@@ -69,7 +69,9 @@ done
 # o real do componente 1.5.0 (cópia local).
 echo "== componentes vs headers IDF reais (usb) =="
 REAL=tools/syntaxcheck/real
-for src in components/pda_audio/audio_uac.c components/pda_usb/usb_hid_keyboard.cpp; do
+for src in components/pda_audio/audio_uac.c components/pda_usb/usb_hid_keyboard.cpp \
+         components/pda_audio/audio_decode.c components/pda_audio/audio_tags.c \
+         components/pda_audio/audio_playlist.c; do
     log="/tmp/syntaxcheck_comp_$(basename "$src").log"
     CC=g++; [ "${src##*.}" = c ] && CC=gcc
     if $CC -std=gnu++20 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
@@ -77,7 +79,7 @@ for src in components/pda_audio/audio_uac.c components/pda_usb/usb_hid_keyboard.
            -I tools/syntaxcheck/stubs -I "$REAL" \
            -I components/pda_board/include -I components/pda_script/include \
            -I components/pda_power/include -I components/pda_usb/include \
-           -I components/pda_audio/include \
+           -I components/pda_audio/include -I components/pda_audio/minimp3 \
            "$src" 2>"$log"; then
         echo "  OK  $src (componente)"
     else

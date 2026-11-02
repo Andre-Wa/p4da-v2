@@ -10,6 +10,7 @@ export component MusicScreen inherits Rectangle {
     in property <string> dev;
     in property <string> state;
     in property <string> track;
+    in property <string> meta: "";
     in property <string> route: "auto";
     in-out property <float> volume: 60;
     in property <string> vol-label: "falante";
@@ -88,6 +89,12 @@ export component MusicScreen inherits Rectangle {
                 text: "Faixa: " + root.track;
                 color: Theme.on-surface;
                 font-size: Theme.type-body;
+                wrap: word-wrap;
+            }
+            if root.meta != "": Text {
+                text: root.meta;
+                color: Theme.on-surface-var;
+                font-size: Theme.type-label;
                 wrap: word-wrap;
             }
             Text {
