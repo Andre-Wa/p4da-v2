@@ -1,3 +1,13 @@
+> **Nota v2 (v2.3.1):** hotfix de build. `s_state` dos DOIS players é de
+> 64 bytes — a mensagem mais longa do SOM.4 ("erro: formato/taxa não
+> suportados (WAV/MP3 44k1/48k)") tem 53 bytes em UTF-8 e com `s_state[48]`
+> o GCC 14 do IDF 5.5 aborta o build em `-Werror=format-truncation`.
+> Regra nova: literal em `set_state()` é medido por
+> `tools/hosttest/msg_budget.py` (determinístico, sem depender de o
+> compilador inlinar). Também: fim natural, erro de leitura/decode e stop
+> do usuário viraram estados DISTINTOS nos dois backends (`fim da faixa` /
+> `erro: leitura/decode` / `parado`) — na v2.3.0 os três colapsavam.
+>
 > **Nota v2 (v2.3.0):** SOM.4 IMPLEMENTADO: `audio_decode.[ch]` (pcm_src
 > WAV+MP3 via minimp3 vendorizado CC0 em `minimp3/`), `audio_tags.[ch]`
 > (ID3v2.2/3/4 + LIST/INFO), `audio_playlist.[ch]` (.m3u/.m3u8); os dois

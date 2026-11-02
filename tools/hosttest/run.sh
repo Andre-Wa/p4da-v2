@@ -64,3 +64,10 @@ gcc -std=gnu11 -Wall -Wextra -Wno-unused-parameter     -I tools/hosttest/stubs -
 
 echo "--- rodando /tmp/audiotest_bin ---"
 /tmp/audiotest_bin
+
+# ---- MSG-BUDGET (v2.3.1): orçamento dos buffers de estado do áudio.
+# O build da v2.3.0 no alvo morreu em -Werror=format-truncation (mensagem
+# de 53 bytes UTF-8 em s_state[48]). O GCC 12 do host só AVISA e só quando
+# o set_state() é inlinado; audio_i2s.c nem entra no syntaxcheck (faltam
+# driver/i2s_std.h e esp_codec_dev.h reais). Daí a checagem estática. ----
+python3 tools/hosttest/msg_budget.py

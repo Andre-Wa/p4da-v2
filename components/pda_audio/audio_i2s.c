@@ -63,7 +63,10 @@ static volatile bool s_stop_req = false;
 static volatile bool s_suspend_req = false;
 static volatile bool s_suspended = false;
 static char s_track[64] = "";
-static char s_state[48] = "sem init";
+/* 64: ver audio_uac.c — a mensagem de formato não suportado (SOM.4) tem
+ * 53 bytes em UTF-8; com 48 o GCC 14 do IDF 5.5 falha o build em
+ * -Werror=format-truncation (v2.3.1). */
+static char s_state[64] = "sem init";
 static audio_i2s_event_cb s_cb = NULL;
 static void *s_ctx = NULL;
 /* volume/mute locais (SOM.3) */
@@ -272,6 +275,10 @@ static void do_play_local(const char *path)
              (unsigned long)pcm_src_rate(src), pcm_src_kind(src));
     static int16_t buf[2048];        /* 1024 frames estéreo = 4 KB */
     bool open_now = false;
+    /* v2.3.1: fim natural ≠ erro de leitura ≠ stop do usuário. Com o
+     * pcm_src (SOM.4) o loop sai por três caminhos e a v2.3.0 tratava os
+     * três como "fim da faixa" — o áudio_uac.c já distinguia. */
+    bool eof = false, rderr = false;
 
     while (!s_stop_req) {
         /* pause: solta o codec (beep passa livre) e espera */
@@ -292,8 +299,8 @@ static void do_play_local(const char *path)
         if (!open_now) { chan_open(pcm_src_rate(src)); open_now = true; }
 
         int got = 0;
-        if (!pcm_src_read(src, buf, 1024, &got)) break;
-        if (got == 0) break;                       /* EOF limpo */
+        if (!pcm_src_read(src, buf, 1024, &got)) { rderr = true; break; }
+        if (got == 0) { eof = true; break; }        /* EOF limpo */
         int wfail = 0;
         for (;;) {
             esp_err_t e = esp_codec_dev_write(s_dev, (void *)buf, got * 4);
@@ -312,9 +319,14 @@ play_end:
     s_playing = false;
     s_paused = false;
     pcm_src_close(src);
-    const bool ended = !s_stop_req;
+    const bool ended = eof && !s_stop_req;
     s_stop_req = false;
-    set_state(ended ? "fim da faixa" : "parado");
+    if (rderr) {
+        ESP_LOGW(TAG, "leitura/decode falhou em \"%s\"", s_track);
+        set_state("erro: leitura/decode");
+    } else {
+        set_state(ended ? "fim da faixa" : "parado");
+    }
 }
 
 static void spk_play_task(void *arg)

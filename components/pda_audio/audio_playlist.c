@@ -30,9 +30,9 @@ int audio_playlist_load(const char *m3u_path, audio_playlist_fn cb, void *ctx,
     FILE *f = fopen(m3u_path, "r");
     if (!f) return -1;
 
-    /* pasta da playlist p/ relativos */
+    /* pasta da playlist p/ relativos (v2.3.1: 'pl' era sobra do rascunho
+     * do limite — o guard já usa a distância do último '/') */
     char base[160] = "";
-    size_t pl = strlen(m3u_path);
     const char *sl = strrchr(m3u_path, '/');
     if (sl && (size_t)(sl - m3u_path) < sizeof(base)) {
         memcpy(base, m3u_path, (size_t)(sl - m3u_path));
@@ -47,11 +47,18 @@ int audio_playlist_load(const char *m3u_path, audio_playlist_fn cb, void *ctx,
                      line[l - 1] == ' '))
             line[--l] = 0;
         if (l == 0 || line[0] == '#') continue;      /* comentários e #EXT* */
-        char full[320];
-        if (line[0] == '/')
-            snprintf(full, sizeof(full), "%s", line);
-        else
-            snprintf(full, sizeof(full), "%s/%s", base, line);
+        /* 416 = base (≤159) + '/' + line (≤255) + NUL → não trunca por
+         * construção. v2.3.1: antes era 320 e o GCC apontava
+         * -Wformat-truncation — linha longa de .m3u virava caminho
+         * cortado e a faixa era pulada em silêncio. */
+        char full[416];
+        int w = (line[0] == '/')
+              ? snprintf(full, sizeof(full), "%s", line)
+              : snprintf(full, sizeof(full), "%s/%s", base, line);
+        if (w < 0 || (size_t)w >= sizeof(full)) {    /* impossível hoje */
+            if (skipped) (*skipped)++;
+            continue;
+        }
         if (!audio_path_is_playable(full) || !file_exists(full)) {
             if (skipped) (*skipped)++;
             continue;

@@ -445,3 +445,94 @@ pipeline inteiro contra a arquitetura de componentes mínimos).
 Validação: AUDIO TEST A–G OK (decode MP3 real no host) · wav A–F ·
 cfg/uigate/lua · syntaxcheck 13/13 + 5 componentes · slint limpo · 13
 renders. MP3 no alvo = aceite M1–M6 do checklist v2.3.0.
+
+---
+
+# v2.3.1 — hotfix de build da v2.3.0 (3 erros no alvo) + endurecimento das ferramentas
+
+## F24 — o build do usuário parou em [13/36] (2026-11-02)
+
+Reporte do usuário: `idf.py build` da v2.3.0 falhou em `pda_audio` com 2
+erros e 2 warnings. Nenhum era de lógica — os três são da fronteira entre
+o que o GCC 12 do meu sandbox aceita e o que o GCC 14 do IDF 5.5 promove a
+erro. É a terceira release seguida que não compila de primeira no alvo
+(v2.1.0, v2.2.1, v2.3.0), então a resposta tem duas metades: consertar e
+fechar o buraco na ferramenta.
+
+### Erro 1 — `uac_host_device_write(dev, buf, …)` (audio_uac.c:268)
+
+    error: passing argument 2 … from incompatible pointer type
+    expected 'uint8_t *' but argument is of type 'int16_t *'
+
+Causa: a refatoragem do SOM.4 trocou o buffer de leitura crua
+(`uint8_t raw[4096]` da v1) pelo `pcm_src`, que entrega **frames PCM**
+(`int16_t buf[2048]`). O write do UAC é orientado a bytes; o cast sumiu na
+troca. GCC 14 promove `-Wincompatible-pointer-types` a erro por padrão;
+no GCC 12 do sandbox era warning — e o estágio 2 do syntaxcheck compilava
+esse arquivo com `-fsyntax-only` sem nenhuma flag `-Werror`, então passou.
+Correção: `(uint8_t *)buf` + comentário do porquê.
+
+### Erro 2 — `-Werror=format-truncation` (audio_i2s.c:79)
+
+    error: '%s' directive output truncated writing 53 bytes into a region of size 48
+
+Causa: a mensagem nova do SOM.4, "erro: formato/taxa não suportados
+(WAV/MP3 44k1/48k)", tem **53 bytes em UTF-8** (o "ã" custa 2) e
+`s_state` era `[48]` — herdado da v1, cujas mensagens mais longas cabiam.
+O diagnóstico exige inlining (`set_state` → `do_play_local` →
+`spk_play_task`), que o `-O2` do alvo faz e o `-fsyntax-only` do host não.
+Correção: `s_state[64]` nos DOIS players — o `audio_uac.c` tinha o mesmo
+buffer de 48 e a mesma mensagem de 53 bytes, e o alvo NÃO reclamou dele
+apenas porque ali o GCC não inlinou. Estouro latente, achado agora.
+
+### Warning 3 — `unused variable 'pl'` (audio_playlist.c:35) e `'bits'` (audio_uac.c:184)
+
+Sobra de rascunho: `pl` era o limite que o guard já calcula pela distância
+do último `/`; `bits` ficou órfão quando a resolução virou literal 16 na
+negociação do alt setting. Ambos removidos.
+
+### Endurecimento (a metade que importa para as próximas releases)
+
+- `tools/syntaxcheck/run.sh` estágio 2: `-O2 -c` (não `-fsyntax-only`) +
+  severidade do GCC 14 (`-Werror=incompatible-pointer-types`,
+  `-Werror=int-conversion`, `-Werror=implicit-function-declaration`,
+  `-Werror=implicit-int`, `-Werror=return-type`, `-Werror=format*`).
+  Verificado contra o código da v2.3.0: **reproduz o Erro 1** no host.
+  Warnings agora são impressos (antes só apareciam em FAIL).
+- Estágio 1: TUs com `snprintf` vão de `-O2 -c` + formato como erro; os
+  demais seguem em `-fsyntax-only` (escolha automática por `grep`;
+  `app_main.cpp` é morto por falta de memória no sandbox já no `-O1`).
+- `tools/syntaxcheck/stubs-i2s/`: stubs de `driver/i2s_std.h`,
+  `esp_codec_dev*.h` e `es8311_codec.h` (assinaturas derivadas do uso,
+  mesmo critério do `hid_host.h`) → `audio_i2s.c` e `audio_vol.c` entram
+  no estágio 2. Era o único arquivo de áudio sem nenhuma checagem, justo o
+  que quebrou. README próprio com o que prova e o que não prova.
+- `tools/hosttest/msg_budget.py` (+ seção no `run.sh`): mede os bytes
+  UTF-8 de cada literal de `set_state()` contra o `s_state[N]` declarado.
+  Não depende de inlining. Verificado: reprova os dois arquivos da v2.3.0
+  e aprova os atuais.
+- `stubs/esp_timer.h`: faltavam `esp_timer_start_once`/`esp_timer_delete`
+  (API real do IDF; `audio_vol.c` usa o primeiro desde a v2.2.1).
+
+### Achados da revisão (mesma rodada, sem pedido do usuário)
+
+- `audio_playlist.c`: `full[320]` podia truncar com linha longa de `.m3u`
+  (base ≤159 + '/' + line ≤255 = 416) → caminho cortado e faixa pulada em
+  silêncio. Buffer dimensionado por construção (`full[416]`) + guard
+  explícito que conta como skip. O GCC do host apontava isso em `-O0`; o
+  `-O2` do alvo, não.
+- `audio_i2s.c`/`audio_uac.c`: erro de leitura/decode colapsava em
+  `"parado"`/`"fim da faixa"`. Agora são três estados distintos
+  (`eof`/`rderr`/stop), iguais nos dois backends — `audio_uac.c` já
+  distinguia EOF, o local não.
+- `main/screen_networks.cpp`: `static const char *TAG` sem uso (a tela não
+  loga; quem loga é o gerenciador em `pda_net`) → removido junto com o
+  `esp_log.h`, para não imprimir warning no build do usuário.
+
+Validação: `tools/hosttest/run.sh` (cfg/uigate/lua-bind/wav A–F/audio
+A–G/msg-budget) OK · syntaxcheck 13/13 TUs + **9** fontes de componente
+OK, zero warnings · `audio_i2s.c` da v2.3.0 reprova no arranjo novo
+(prova de que a rede pega) · sem mudança de UI (`.slint` intocado →
+renders da v2.3.0 continuam válidos). Build no alvo: pendente do usuário
+(regra de `docs/TESTES.md`: release só é entregue após um `idf.py build`
+completo).

@@ -26,16 +26,28 @@ suíte de host verde. Nada de L(n+1) começa com pendência de L(n)
 - **Aceite:** ✅ 2026-10-23 (checklist Parte B, B1–B9+B11; B10 seed de
   relógio com procedimento entregue ao usuário, reporte pendente).
 
-## L3 — Áudio — código em v2.2.0, aceite em HW pendente
+## L3 — Áudio — SOM.1–SOM.3 ✅ em HW (v2.2.3); SOM.4 pendente de HW
 
 - [x] `components/pda_audio`: SOM.1 player WAV no falante local (I2S/
       ES8311) com `wav_parse.[ch]` compartilhado + testes de host com
       WAVs sintéticos (fmt estendido, chunks ímpares, LIST/FACT)
 - [x] SOM.2 roteamento interno|UAC|auto (RAM-only; persistência = SOM.6)
-      · SOM.3 volume local no codec + mute
+      · SOM.3 volume local no codec + mute (NVS por fonte, v2.2.1)
 - [x] Tela Música (rota na tela) + media keys HID → player + sessão "music"
-- [~] Aceite: pendente de hardware (checklist da release v2.2.0) — WAV
-      44k1/48k no falante e no UAC1; pause/resume; beep×música; rota.
+- [x] SOM.4 (v2.3.0): MP3 via minimp3 (CC0, vendorizado), playlists
+      .m3u/.m3u8, metadados ID3v2.2/3/4 + LIST/INFO, fila de reprodução,
+      `pcm_src` como fonte única dos dois backends
+- [x] v2.3.1: hotfix dos 3 erros de build do alvo (GCC 14) + rede de
+      proteção nova no host (`-Werror` do GCC 14 no syntaxcheck,
+      `stubs-i2s/` p/ audio_i2s.c, `msg_budget.py`) — F24
+- **Aceite SOM.1–SOM.3:** ✅ rodadas C1–C15 (v2.2.0), R1–R6 (v2.2.1/2),
+  W1–W4 (v2.2.3): WAV 44k1/48k no falante e no UAC1, pause/resume,
+  beep×música, rota/handover, volume NVS inclusive no 1º play.
+- **Aceite SOM.4:** ⏳ checklist M1–M7, reemitido em
+  `release/v2.3.1/CHECKLIST_HW_v2.3.1.md` (a v2.3.0 não compilou no
+  alvo, então nunca chegou a ser flashada).
+- [ ] C12 (UAC2) adiado por ambiente: porta HS sem VBUS em bateria e
+      `usb_host_uac` 1.5.0 é UAC1-only (docs/USB.md).
 
 ## L4 — Bateria
 

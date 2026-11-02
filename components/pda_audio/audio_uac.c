@@ -39,7 +39,10 @@ static volatile uac_host_device_handle_t s_dev = NULL;
 static volatile bool s_stop_req = false;
 static char s_devname[48] = "";
 static char s_track[64] = "";
-static char s_state[48] = "iniciando";
+/* 64: a maior mensagem de estado tem 53 bytes em UTF-8 ("erro: formato/
+ * taxa não suportados (WAV/MP3 44k1/48k)", SOM.4) — com 48 o GCC 14 do
+ * IDF 5.5 aborta o build em -Werror=format-truncation (v2.3.1). */
+static char s_state[64] = "iniciando";
 /* volume/mute (v5.8): declarados no topo — do_play os usa antes da
  * seção de volume (uso-antes-definição pegou no build de 2026-10-08). */
 static char s_resume_path[144];   /* M5a.2.3: retomar após unplug/erro */
@@ -181,7 +184,10 @@ static void do_play(const char *path)
         set_state("erro: formato/taxa não suportados (WAV/MP3 44k1/48k)");
         return;
     }
-    uint16_t ch = 2, bits = 16;
+    /* SOM.4: a saída p/ o UAC é sempre estéreo 16-bit (o pcm_src expande
+     * mono e recusa outras resoluções) — por isso 'ch' é fixo e a
+     * resolução vai como literal 16 na negociação do alt setting. */
+    const uint16_t ch = 2;
     uint32_t rate = pcm_src_rate(src);
     if (!s_present) {
         pcm_src_close(src); set_state("sem dispositivo"); return;
@@ -251,6 +257,9 @@ static void do_play(const char *path)
     }
     static int16_t buf[2048];        /* 1024 frames estéreo = 4 KB */
     bool ended = false;
+    /* v2.3.1: erro de leitura/decode ≠ fim natural (o audio_i2s.c idem) —
+     * antes os dois caíam em "parado" e o usuário não sabia o quê. */
+    bool rderr = false;
     while (!s_stop_req && s_present) {
         /* pause: segura o fluxo sem fechar o device (posição = offset
          * do arquivo, preservada). */
@@ -258,14 +267,17 @@ static void do_play(const char *path)
             vTaskDelay(pdMS_TO_TICKS(50));
         if (s_stop_req || !s_present) break;
         int got = 0;
-        if (!pcm_src_read(src, buf, 1024, &got)) break;
+        if (!pcm_src_read(src, buf, 1024, &got)) { rderr = true; break; }
         if (got == 0) { ended = true; break; }
         uint32_t n = (uint32_t)got * 4u;
         /* M5a.2.1 (v5.7): write pode falhar UMA vez em transição —
          * retry 5×100 ms; pause não conta retry (v5.8). */
         int wfail = 0;
         for (;;) {
-            esp_err_t e = uac_host_device_write(dev, buf, n,
+            /* (uint8_t *) : o write do UAC é orientado a BYTES; desde o
+             * SOM.4 o buffer vem do pcm_src como int16_t (frames PCM).
+             * GCC 14 (IDF 5.5) trata ponteiro incompatível como ERRO. */
+            esp_err_t e = uac_host_device_write(dev, (uint8_t *)buf, n,
                                                 pdMS_TO_TICKS(2000));
             if (e == ESP_OK) break;
             if (!s_present || s_stop_req) goto play_end;
@@ -302,7 +314,12 @@ play_end:
     s_playing = false;
     pcm_src_close(src);
     s_stop_req = false;
-    set_state(ended ? "fim da faixa" : "parado");
+    if (rderr) {
+        ESP_LOGW(TAG, "leitura/decode falhou em \"%s\"", s_track);
+        set_state("erro: leitura/decode");
+    } else {
+        set_state(ended ? "fim da faixa" : "parado");
+    }
 }
 
 static void player_task(void *arg)

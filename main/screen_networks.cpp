@@ -17,13 +17,13 @@
 
 #include "wifi_net.h"
 
-#include "esp_log.h"
-
 #include <cstdio>
 #include <string>
 #include <vector>
 
-static const char *TAG = "networks";
+/* v2.3.1: sem TAG/esp_log.h aqui — esta tela não loga (o gerenciador de
+ * Wi-Fi em pda_net é quem loga), e o alvo compila com -Wall: variável
+ * estática não usada vira ruído no build do usuário. */
 
 /* SSID da rede fechada escolhida na tela enquanto o prompt de senha está
  * aberto (o prompt em si é estado do gerenciador — g_fm). */
