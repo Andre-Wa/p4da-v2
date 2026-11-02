@@ -90,11 +90,15 @@ static void usb_watch_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
+    esp_err_t er = ESP_OK;
     for (;;) {
-        /* callbacks rodam NESTE contexto (docs do IDF) e só enfileiram */
-        const bool alive =
-            (usb_host_client_handle_events(s_watch_cli,
-                                           pdMS_TO_TICKS(50)) == ESP_OK);
+        /* callbacks rodam NESTE contexto (docs do IDF) e só enfileiram.
+         * v2.2.3: ESP_ERR_TIMEOUT = janela ociosa NORMAL — a v2.2.2 o
+         * tratava como teardown e o watcher morria ~50 ms após o boot
+         * (por isso o crash do R2a repetiu: ninguém invalidava a
+         * presença). Sai só em erro real (uninstall/teardown). */
+        er = usb_host_client_handle_events(s_watch_cli, pdMS_TO_TICKS(50));
+        if (er != ESP_OK && er != ESP_ERR_TIMEOUT) break;
         wevt_t e;
         while (xQueueReceive(s_watch_q, &e, 0) == pdTRUE) {
             if (e.op == 1) {
@@ -126,8 +130,9 @@ static void usb_watch_task(void *arg)
                     sl.hdl = NULL; sl.addr = 0;
                 }
         }
-        if (!alive) break;   /* teardown da lib: sai e libera o slot */
     }
+    ESP_LOGW(TAG, "watcher: eventos terminaram (%s) — task sai",
+             esp_err_to_name(er));
     usb_host_client_deregister(s_watch_cli);
     s_watch_cli = NULL;
     s_watch_task = NULL;

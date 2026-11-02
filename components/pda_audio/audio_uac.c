@@ -45,7 +45,6 @@ static char s_state[48] = "iniciando";
 static char s_resume_path[144];   /* M5a.2.3: retomar após unplug/erro */
 static uint32_t s_resume_off;
 static int s_vol_pct = 70;
-static bool s_vol_ok = false;     /* só auto-aplica após 1 set com sucesso */
 static bool s_vol_bad = false;    /* device sem feature unit: desiste */
 static bool s_muted = false;
 static uint8_t s_addr = 0, s_iface = 0;
@@ -171,6 +170,8 @@ static void drv_event_cb(uint8_t addr, uint8_t iface_num,
 
 /* ---------------- player ---------------- */
 
+static void vol_spawn(int pct, bool mute);   /* fwd: definição na seção de volume */
+
 static void do_play(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -228,9 +229,11 @@ static void do_play(const char *path)
     if (uac_host_device_start(dev, &sc) != ESP_OK) {
         uac_host_device_close(dev); fclose(f); set_state("erro: start stream"); return;
     }
-    if (s_vol_ok && !s_vol_bad)
-        uac_host_device_set_volume(dev,
-            (uint8_t)(s_vol_pct == 100 ? 99 : s_vol_pct));   /* best-effort */
+    /* v2.2.3 (R3b): o volume salvo (audio_vol/NVS) aplica em TODO play —
+     * inclusive no primeiro, quando o device ainda está no 100% da
+     * própria curva. No vol_task: o timeout de ~5 s de devices sem
+     * feature unit (v5.8) não atrasa o start da faixa no au_play. */
+    if (!s_vol_bad) vol_spawn(s_vol_pct, false);
     s_playing = true;
     s_paused = false;
     s_dev = dev;
@@ -414,7 +417,6 @@ static void vol_task(void *arg)
                 ESP_LOGW(TAG, "volume não suportado neste device (%s)",
                          esp_err_to_name(e));
             } else {
-                s_vol_ok = true;
                 ESP_LOGI(TAG, "volume %d%%", s_vol_pct);
                 /* M5a.2.4: o mínimo da curva do device não é silêncio
                  * (H3S: 0% ainda audível, 0–10% indistinguíveis); 0% vira

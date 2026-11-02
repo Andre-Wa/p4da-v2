@@ -366,3 +366,32 @@ absoluto).
 Validação: syntaxcheck 13/13 · suíte host verde (wav A–F) · slint limpo ·
 13 renders (music c/ slider). Crash e handover NÃO são stubáveis no host
 (driver USB/raça) — aceite no CHECKLIST_HW_v2.2.1.md (R1–R6).
+
+---
+
+# v2.2.3 — o watcher morria no primeiro idle (R2a) + volume no 1º play (R3b)
+
+## F20 — dois bugs do reporte de campo 2026-10-25/26
+
+**1. Watcher zumbi (crash R2a repetido).** A v2.2.2 tratou o retorno de
+`usb_host_client_handle_events()` como "vivo só se ESP_OK" — mas janela
+ociosa retorna `ESP_ERR_TIMEOUT` (docs/comportamento padrão do IDF): a
+task do watcher saía no primeiro idle (~50 ms de vida), deregistrava o
+client e `s_watch_task=NULL`. Evidência no log do usuário: NENHUMA linha
+`watcher:` em todo o boot (nem "open falhou", nem "desconectou") — um
+watcher vivo sempre loga algo num unplug. Sem watcher, `s_present` stale
+→ open em device gone → crash uac_host.c:2171 de novo. v2.2.3: timeout =
+idle normal; sai só em erro real (uninstall), agora com log de saída
+(`watcher: eventos terminaram (<err>)`).
+
+**2. Volume USB no 1º play (R3b).** O apply em `do_play` era gateado por
+`s_vol_ok` (só após 1 SET bem-sucedido) — no primeiro play de cada boot
+o device ficava no 100% da própria curva, ignorando o NVS. v2.2.3:
+`vol_spawn(s_vol_pct)` em TODO play (task própria: o timeout de ~5 s de
+devices sem feature unit não atrasa o start); `s_vol_ok` removido (não
+tinha mais leitor); `s_vol_bad` segue como kill-switch permanente.
+
+Wi-Fi (R5): sem mudança de código — ver análise no commit/checklist
+(link marginal -84/-86 dBm com perda probabilística de EAPOL; o manager
+comportou-se como projetado: rotacionou, marcou, relaxou e reconectou no
+boot seguinte ao mesmo RSSI).
