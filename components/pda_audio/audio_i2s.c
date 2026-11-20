@@ -159,7 +159,12 @@ esp_err_t audio_i2s_init(void)
 
     s_q = xQueueCreate(2, sizeof(cmd_t));
     if (!s_q) return ESP_ERR_NO_MEM;
-    if (xTaskCreateWithCaps(spk_play_task, "spk_play", 8192, NULL, 4, NULL,
+    /* v2.3.2: era 8192, tamanho da era WAV-only. O mp3dec_decode_frame
+     * do minimp3 põe ~16 KB de scratch na pilha por chamada — o dono do
+     * número é AUDIO_PCM_TASK_STACK_BYTES (audio_decode.h), medido por
+     * tools/hosttest/host_stack_test.c. */
+    if (xTaskCreateWithCaps(spk_play_task, "spk_play",
+                            AUDIO_PCM_TASK_STACK_BYTES, NULL, 4, NULL,
                             MALLOC_CAP_SPIRAM) != pdPASS)
         return ESP_FAIL;
 

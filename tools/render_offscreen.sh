@@ -35,12 +35,32 @@ echo "== slint-compiler (embed p/ software renderer) =="
     -o gen.h --cpp-file gen_a.cpp --cpp-file gen_b.cpp \
     "$REPO/main/ui/app_ui.slint"
 
+# Host com pouca RAM (o sandbox onde isto é escrito tem ~700 MB livres) não
+# atravessa o código gerado do Slint em -O1. Os degraus abaixo trocam tempo
+# por memória — e NENHUM deles muda o resultado do render (só a velocidade):
+#   -O1  →  -O0  →  -O0 com GC agressivo do GCC (--param ggc-min-*).
+# Sempre avisamos quando caímos de degrau, para ninguém achar que foi o
+# build padrão que rodou.
+cxx() {
+    local out="$1"; shift
+    local degraus=("-O1" "-O0" "-O0 --param ggc-min-expand=2 --param ggc-min-heapsize=8192")
+    local d
+    for d in "${degraus[@]}"; do
+        # shellcheck disable=SC2086
+        if g++ -std=c++20 $d -I"$SLINT_CPP/include/slint" -I"$REPO/main" -I. \
+               "$@" -o "$out" 2>/tmp/render_cc.log; then
+            [ "$d" = "-O1" ] || echo "  (pouca RAM: $(basename "$out") em '$d' — render idêntico)"
+            return 0
+        fi
+        grep -qE 'Killed|virtual memory exhausted|Cannot allocate memory' /tmp/render_cc.log || break
+    done
+    echo "  FALHA compilando $out:"; sed 's/^/    /' /tmp/render_cc.log; exit 1
+}
+
 echo "== g++ =="
-g++ -std=c++20 -O1 -I"$SLINT_CPP/include/slint" -I"$REPO/main" -I. -c gen_a.cpp -o gen_a.o
-g++ -std=c++20 -O1 -I"$SLINT_CPP/include/slint" -I"$REPO/main" -I. -c gen_b.cpp -o gen_b.o
-g++ -std=c++20 -O1 -I"$SLINT_CPP/include/slint" -I"$REPO/main" -I. \
-    main.cpp gen_a.o gen_b.o -o harness \
-    -L"$SLINT_CPP/lib" -lslint_cpp -Wl,-rpath,"$SLINT_CPP/lib"
+cxx gen_a.o -c gen_a.cpp
+cxx gen_b.o -c gen_b.cpp
+cxx harness main.cpp gen_a.o gen_b.o -L"$SLINT_CPP/lib" -lslint_cpp -Wl,-rpath,"$SLINT_CPP/lib"
 
 echo "== render =="
 # coltest/fontpitch = sondas M4.13 (v1) do pitch de glifo (drift do

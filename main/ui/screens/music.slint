@@ -47,10 +47,16 @@ export component MusicScreen inherits Rectangle {
                         clip: true;
                         Text {
                             x: Theme.sp-sm;
+                            /* v2.3.2 (M4): o rótulo passou a carregar a pasta
+                             * da faixa; sem largura limitada o elide não
+                             * acontece e o nome era cortado no seco (visto no
+                             * render offscreen — as outras telas já elidiam) */
+                            width: parent.width - 2 * Theme.sp-sm;
                             text: t;
                             color: Theme.on-surface;
                             font-size: Theme.type-body;
                             vertical-alignment: center;
+                            overflow: elide;
                         }
                         Rectangle {
                             width: 100%;
@@ -139,7 +145,7 @@ export component MusicScreen inherits Rectangle {
                 GhostButton { horizontal-stretch: 1; text: "Voltar"; clicked => { root.go-back(); } }
             }
             Text {
-                text: "WAV PCM16 em /pda/music/ (44k1/48k). Rota vale na próxima faixa.";
+                text: "MP3/WAV (44k1/48k) em /pda/music/ e subpastas; .m3u vira fila. Rota vale na próxima faixa.";
                 font-size: Theme.type-tiny;
                 color: Theme.on-surface-var;
                 wrap: word-wrap;

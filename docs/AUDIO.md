@@ -1,3 +1,13 @@
+> **Nota v2 (v2.3.2):** o crash de MP3 da rodada foi de **pilha**, não de
+> decoder: `mp3dec_decode_frame()` do minimp3 aloja `mp3dec_scratch_t`
+> (16.256 B) na pilha e os players tinham 8/10 KB da era WAV-only. Os dois
+> agora usam `AUDIO_PCM_TASK_STACK_BYTES` (32 KB) de `audio_decode.h`, com
+> o número vigiado por `tools/hosttest/host_stack_test.c` (high-water real
+> do decode = 20.856 B; WAV = 3.448 B). Também: acervo em subpasta é
+> varrido por `audio_scan.[ch]` (novo módulo puro; teto de 512 entradas com
+> aviso, profundidade 5, ordem por caminho relativo) e a linha da lista de
+> faixas elide rótulo longo.
+>
 > **Nota v2 (v2.3.1):** hotfix de build. `s_state` dos DOIS players é de
 > 64 bytes — a mensagem mais longa do SOM.4 ("erro: formato/taxa não
 > suportados (WAV/MP3 44k1/48k)") tem 53 bytes em UTF-8 e com `s_state[48]`

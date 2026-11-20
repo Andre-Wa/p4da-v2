@@ -380,8 +380,14 @@ esp_err_t audio_uac_init(void)
     /* M5.4.5: 6148→10240 em PSRAM: a cadeia fopen/fread FATFS +
      * uac open/start + ESP_LOGI(vprintf) estourou 6144 internos no
      * primeiro play (Stack protection fault em _svfprintf_r, log de
-     * 2026-10-07). Mesma política das threads de I/O do main.cpp. */
-    if (xTaskCreateWithCaps(player_task, "au_play", 10240, NULL, 4, NULL,
+     * 2026-10-07). Mesma política das threads de I/O do main.cpp.
+     * v2.3.2: 10240→AUDIO_PCM_TASK_STACK_BYTES. O SOM.4 trouxe o
+     * minimp3, que põe mp3dec_scratch_t (~16 KB) NA PILHA: a v2.3.1
+     * morreu aqui com "Stack protection fault" na au_play, SP 8.140 B
+     * abaixo do limite (log do usuário, 2026-11-02). Número medido e
+     * vigiado por tools/hosttest/host_stack_test.c. */
+    if (xTaskCreateWithCaps(player_task, "au_play",
+                            AUDIO_PCM_TASK_STACK_BYTES, NULL, 4, NULL,
                             MALLOC_CAP_SPIRAM) != pdPASS)
         return ESP_FAIL;
     if (xTaskCreateWithCaps(evt_task, "au_evt", 6144, NULL, 4, NULL,

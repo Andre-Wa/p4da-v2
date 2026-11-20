@@ -8,7 +8,10 @@
  *     inexistentes/não-tocáveis pulados com contagem;
  *   E pcm_src WAV: rate/kind/frames;
  *   F pcm_src MP3 real: 2 s @44k1 (±2%), kind "mp3";
- *   G recusas: wav 22050 e "mp3" de lixo = NOT_SUPPORTED.
+ *   G recusas: wav 22050 e "mp3" de lixo = NOT_SUPPORTED;
+ *   H audio_scan_tree (v2.3.2, M4): subpastas, ordem por
+ *     caminho relativo, tetos de profundidade/entradas,
+ *     raiz inexistente, barra final na raiz.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +20,7 @@
 
 #include "audio_tags.h"
 #include "audio_playlist.h"
+#include "audio_scan.h"
 #include "audio_decode.h"
 
 static int fails;
@@ -76,6 +80,37 @@ static void collect(const char *p, void *ctx)
 {
     (void)ctx;
     if (g_n < 16) snprintf(g_paths[g_n++], sizeof(g_paths[0]), "%s", p);
+}
+
+/* cria um arquivo vazio dentro de `dir` (a varredura só olha o nome) */
+static void touch_file(const char *dir, const char *name)
+{
+    char p[400];
+    snprintf(p, sizeof(p), "%s/%s", dir, name);
+    FILE *f = fopen(p, "wb");
+    if (f) fclose(f);
+}
+
+/* coleção do callback do audio_scan (o teste afirma sobre ela) */
+static char g_full[8][400];
+static char g_rel[8][300];
+static int  g_sn;
+
+static void scan_cb(const char *full, const char *rel, void *ctx)
+{
+    (void)ctx;
+    if (g_sn >= 8) return;
+    snprintf(g_full[g_sn], sizeof(g_full[0]), "%s", full);
+    snprintf(g_rel[g_sn], sizeof(g_rel[0]), "%s", rel);
+    g_sn++;
+}
+
+/* varre zerando a coleção; devolve o retorno do módulo */
+static int scan_reset(const char *root, int max_depth, int max_entries,
+                      bool *trunc)
+{
+    g_sn = 0;
+    return audio_scan_tree(root, max_depth, max_entries, scan_cb, NULL, trunc);
 }
 
 int main(void)
@@ -202,7 +237,68 @@ int main(void)
         printf("[audio] G: recusas honestas (taxa/liço)  OK\n");
     }
 
+    /* ---- H: varredura recursiva do acervo (v2.3.2, M4) ---- */
+    {
+        char tree[64], sub[80], deep[96];
+        snprintf(tree, sizeof(tree), ROOT "/tree");
+        snprintf(sub,  sizeof(sub),  "%s/sub", tree);
+        snprintf(deep, sizeof(deep), "%s/deep", sub);
+        mkdir(tree, 0755); mkdir(sub, 0755); mkdir(deep, 0755);
+        touch_file(tree, "a.mp3");
+        touch_file(tree, "pl.m3u8");
+        touch_file(tree, "leia.txt");        /* não tocável: fica fora */
+        touch_file(tree, ".escondido.mp3");  /* entra: a varredura não
+                                              * filtra dotfile (nem a v1
+                                              * filtrava; FATFS não tem) */
+        touch_file(sub,  "b.wav");
+        touch_file(deep, "c.mp3");
+
+        int n = scan_reset(tree, 5, 0, NULL);
+        CHECK(n == 5 && g_sn == 5, "H1: esperava 5 entradas, veio n=%d sn=%d",
+              n, g_sn);
+        /* ordem por caminho relativo (byte order): '.' < 'a' < 'p' < 's' */
+        CHECK(!strcmp(g_rel[0], ".escondido.mp3") &&
+              !strcmp(g_rel[1], "a.mp3") &&
+              !strcmp(g_rel[2], "pl.m3u8") &&
+              !strcmp(g_rel[3], "sub/b.wav") &&
+              !strcmp(g_rel[4], "sub/deep/c.mp3"),
+              "H1b: ordem relativa errada: %s | %s | %s | %s | %s",
+              g_rel[0], g_rel[1], g_rel[2], g_rel[3], g_rel[4]);
+        CHECK(!strcmp(g_full[4], ROOT "/tree/sub/deep/c.mp3"),
+              "H1c: full da subpasta montado errado: %s", g_full[4]);
+        printf("[audio] H1: subpastas varridas, ordem por caminho relativo  OK\n");
+
+        n = scan_reset(tree, 0, 0, NULL);
+        CHECK(n == 3, "H2: max_depth 0 devia dar só o topo (3), veio %d", n);
+        printf("[audio] H2: teto de profundidade respeitado  OK\n");
+
+        bool trunc = false;
+        n = scan_reset(tree, 5, 2, &trunc);
+        CHECK(n == 2 && trunc, "H3: max_entries 2 devia cortar em 2 + avisar "
+                               "(veio n=%d trunc=%d)", n, (int)trunc);
+        trunc = false;
+        n = scan_reset(tree, 5, 100, &trunc);
+        CHECK(n == 5 && !trunc, "H3b: sem estouro de teto não pode avisar "
+                                "truncation (n=%d trunc=%d)", n, (int)trunc);
+        printf("[audio] H3: teto de entradas corta e AVISA (truncated)  OK\n");
+
+        n = scan_reset(ROOT "/nao_existe", 5, 0, NULL);
+        CHECK(n == -1, "H4: raiz que não abre devia dar -1, veio %d", n);
+        printf("[audio] H4: raiz inexistente = -1 (UI loga honesto)  OK\n");
+
+        char combarra[80];
+        snprintf(combarra, sizeof(combarra), ROOT "/tree/");
+        n = scan_reset(combarra, 5, 0, NULL);
+        CHECK(n == 5 && g_rel[3][0] != '/' && !strcmp(g_rel[3], "sub/b.wav"),
+              "H5: barra final na raiz vazou no relativo (n=%d rel3=%s)",
+              n, g_rel[3]);
+        CHECK(!strcmp(g_full[3], ROOT "/tree/sub/b.wav"),
+              "H5b: full com raiz de barra final errado: %s", g_full[3]);
+        printf("[audio] H5: raiz com barra final normalizada  OK\n");
+    }
+
     if (fails) { printf("AUDIO TEST: %d FALHA(S)\n", fails); return 1; }
-    printf("AUDIO TEST: OK (tags ID3/LIST, m3u, pcm_src WAV+MP3, recusas)\n");
+    printf("AUDIO TEST: OK (tags ID3/LIST, m3u, pcm_src WAV+MP3, "
+           "recusas, varredura recursiva)\n");
     return 0;
 }

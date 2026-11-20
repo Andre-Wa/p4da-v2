@@ -11,9 +11,10 @@ gcc/g++, lua5.4 (+dev) e, p/ o render, Slint-cpp 1.12.1 + Qt6/xkb/gbm.
 |---|---|---|
 | cfg | `components/pda_script/pda_config.c` | parse/serialize/sanitize de `system.lua`, censo/FNV, sombra NVS, clamp de sanidade, ordem das seções (a v1 quebrou aqui: INT_MAX, mídia insana) |
 | uigate | `main/ui_gate.h` | UI-LOOP-GATE: acumular antes do loop, flush FIFO, idempotência, concorrência sem perda (1308 posts), post aninhado, cenário do crash da 15ª rodada |
-| audio | `audio_tags.c`, `audio_playlist.c`, `audio_decode.c` | tags ID3v2.4 do mp3 REAL do template + LIST/INFO sintético + sem-tag; m3u (comentários/#EXT/relativos/absolutos/skips); pcm_src WAV exato e **MP3 real decodificado no host** (~88k frames/2 s); recusas (22050, lixo) |
+| audio | `audio_tags.c`, `audio_playlist.c`, `audio_decode.c`, `audio_scan.c` | tags ID3v2.4 do mp3 REAL do template + LIST/INFO sintético + sem-tag; m3u (comentários/#EXT/relativos/absolutos/skips); pcm_src WAV exato e **MP3 real decodificado no host** (~88k frames/2 s); recusas (22050, lixo); **H** varredura recursiva do acervo (subpastas, ordem por caminho relativo, tetos de profundidade/entradas com aviso, raiz inexistente = -1, barra final na raiz) |
 | wav | `components/pda_audio/wav_parse.c` | parser SOM.1 contra WAVs sintéticos: canônico off/len, fmt estendido, LIST ímpar+FACT (pad de word), não-PCM rejeitado, RIFF≠WAVE/fmt truncado, mono 22050 (recusa de taxa é do player) |
 | lua-bind | `components/pda_script/lua_runtime.c` + `sdcard-template/pda/scripts/logger_exemplo.lua` | VM protegida no Lua 5.4 (shim p/ lua_newstate de 3 args), bindings fs/mkdir/sleep, e o script REAL end-to-end: CSV criado (header+8 linhas crescentes), continuação sem duplicar header, falha graciosa sem diretório |
+| stack | `audio_decode.c` + minimp3 REAL, via `tools/hosttest/host_stack_test.c` | **orçamento de pilha das tasks de player**: `sizeof(mp3dec_scratch_t)` (16.256 B) e o high-water mark REAL da cadeia de decode, medido rodando o MP3 do template numa pilha-sonda preenchida com sentinela (`ucontext`). Reprova se `AUDIO_PCM_TASK_STACK_BYTES` não cobrir medição + margem. Nasceu do crash da v2.3.1 (`Stack protection fault` na `au_play`) — e foi ele que derrubou o palpite de 24 KB, obrigando os 32 KB |
 | msg-budget | `audio_i2s.c`, `audio_uac.c` (análise estática, `tools/hosttest/msg_budget.py`) | bytes UTF-8 de cada literal passado a `set_state()` ≤ `s_state[N]` declarado. Existe porque a v2.3.0 morreu no alvo em `-Werror=format-truncation` (mensagem de 53 bytes em buffer de 48) e o host não via: `-Wformat-truncation` só dispara com inlining, que o GCC 12 daqui nem sempre faz (e o GCC 14 do alvo faz) |
 
 Stubs em `tools/hosttest/stubs/`: só o sistema (esp_log/esp_err/esp_timer/
@@ -69,6 +70,18 @@ mostrou `unused variable` junto com o erro — ruído que eu quero ver).
   garantia determinística para `s_state`.
 - **Sem link.** `-c -o /dev/null`: símbolo inexistente entre TUs só
   aparece no alvo.
+- **Pilha medida no host ≠ pilha do alvo.** O high-water de
+  `host_stack_test.c` é glibc/x86_64; o alvo é riscv32/newlib (o
+  `vprintf` do `ESP_LOGx` tem outro perfil). Daí a margem de 4 KB na
+  constante — o teste é piso, não contrato. O caso real (crash da
+  v2.3.1) exigiu ≥18.368 B no alvo contra 20.856 B medidos aqui: a
+  ordem de grandeza bate, o detalhe não.
+- **Host com pouca RAM degrada, e avisa.** As ferramentas trocam tempo
+  por memória quando o `cc1plus` é morto (`-O2` → `-fsyntax-only` → GC
+  agressivo do GCC `--param ggc-min-*`; no render: `-O1` → `-O0` → `-O0`
+  + GC). Nesse caso a linha vem com `OK*` e diz qual checagem **não**
+  rodou. Um FAIL só por ambiente não é permitido: ou passa com aviso,
+  ou falha de verdade.
 
 ## 3. `tools/md_test.cpp` — parser markdown
 

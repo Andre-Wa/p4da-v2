@@ -536,3 +536,123 @@ OK, zero warnings · `audio_i2s.c` da v2.3.0 reprova no arranjo novo
 renders da v2.3.0 continuam válidos). Build no alvo: pendente do usuário
 (regra de `docs/TESTES.md`: release só é entregue após um `idf.py build`
 completo).
+
+---
+
+# v2.3.2 — o crash de pilha do MP3 (M2) e o acervo em subpastas (M4)
+
+## F25 — reporte de hardware da rodada v2.3.1 (2026-11-03)
+
+Aceite parcial: **M1 ✅** (MP3 no falante e no fone, metadados lidos em
+WAV e MP3) e **M2 ✗ crash**; M3 e M5–N bloqueados pelo crash. O log do
+usuário trouxe o número exato do problema:
+
+    Guru Meditation Error: Core 1 panic'ed (Stack protection fault)
+    Detected in task "au_play" at mp3dec_decode_frame (minimp3.h:1714)
+    Stack pointer: 0x4866df40
+    Stack bounds:  0x4866ff0c - 0x48672700
+    (detalhe: nenhum log do subsistema de som aparece antes do crash)
+
+### Diagnóstico
+
+* `Stack bounds` = pilha da task = 10.228 B (os 10 KB de `au_play`).
+* `SP` no fault = 8.140 B **abaixo** do limite inferior → a cadeia exigia
+  pelo menos 10.228 + 8.140 ≈ **18.4 KB**.
+* `mp3dec_decode_frame()` declara `mp3dec_scratch_t scratch` **na pilha**:
+  16.256 B (`syn[33][64]` floats = 8.448, `grbuf[2][576]` = 4.608,
+  `maindata` = 2.815, resto ≈ 0.4). Com os chamadores (`player_task` →
+  `do_play` → `pcm_src_open` → `mp3_fill` → decode → `L3_decode`/
+  `mp3d_synth` + stdio), o high-water medido no host é **20.856 B**.
+* Os tamanhos dos players eram da **era WAV-only da v1**: `spk_play` 8 KB,
+  `au_play` 10 KB — e o `au_play` já tinha sido aumentado de 6148 para
+  10240 na M5.4.5 por outro estouro de pilha (em `_svfprintf_r`). O
+  caminho WAV mede 3.448 B, por isso nada estourava antes do SOM.4.
+* O crash ocorrer em `pcm_src_open` (e não depois) bate com a ausência de
+  log: o primeiro `mp3_fill()` acontece **na abertura**, para descobrir a
+  taxa — antes de qualquer `set_state("tocando")`/`ESP_LOGI`.
+* Por que o falante (M1) não caiu com 8 KB? Não tenho evidência, e a
+  hipótese honesta é a pior: em vez de faultar, a escrita foi para a PSRAM
+  vizinha (estouro silencioso). M1 precisa ser retestado — "tocou" ali não
+  quer dizer "estava seguro".
+
+### Correção
+
+* `audio_decode.h` ganha `AUDIO_PCM_TASK_STACK_BYTES` (32 KB) com a
+  memória de cálculo escrita junto, e `AUDIO_PCM_STACK_MARGIN_BYTES` (4 KB).
+  Os dois players criam a task com a constante — não com literal.
+  Custo: +46 KB de PSRAM (de 18 KB para 64 KB nas duas tasks), em 8 MB.
+* Escolha 32 KB e não 24 KB porque **o teste reprovou 24 KB**: folga de
+  3.766 B contra os 4 KB exigidos. O número veio da medição, não do palpite.
+* Descartado: remendar o minimp3 para mover o `scratch` para o heap
+  (o vendorizado é CC0 e cópia do upstream — mexer nele custaria o
+  `diff` limpo na próxima atualização por uma economia de ~20 KB de PSRAM).
+
+### M4 — acervo em subpastas
+
+A tela Música listava **só o topo de `music/`** e a tela Arquivos não toca
+áudio: faixa em subpasta não tinha caminho nenhum, e a fila ("Próxima"/
+media NEXT) nunca chegava nela.
+
+* Módulo novo `audio_scan.[ch]` (puro, host-testado): varre em
+  profundidade com pilha explícita de pastas (não recursa — a task de I/O
+  tem 8 KB de pilha e recursão com DIR por nível seria repetir o erro que
+  acabamos de corrigir em outro lugar), tetos de profundidade (5) e de
+  entradas (512, cortando **e avisando**), ordem por caminho relativo
+  (agrupa por pasta/álbum) e normalização da barra final na raiz.
+* `screen_music.cpp`: `refresh_music_list()` passou a usar o módulo; a
+  decisão de rótulo ficou na UI — prefixo com a **pasta imediata**
+  ("Trilhas/Drum Show.wav"), porque o caminho inteiro comia o nome.
+
+### O que o render offscreen achou (e o código de host não acharia)
+
+Renderizando a tela com entradas de subpasta, apareceram dois bugs de
+display que só a imagem mostra:
+
+1. `music.slint`: a `Text` da linha da lista não tinha largura limitada →
+   sem `overflow: elide` possível, o rótulo longo era **cortado no seco**
+   ("…Acustica/Drum" sem reticência). Todas as outras telas (files,
+   networks, scripts, editor) já elidiam; a Música era a exceção.
+   Corrigido (largura + `overflow: elide`), e a amostra do harness ganhou
+   uma linha longa para exercitar isso permanentemente.
+2. O texto de ajuda do rodapé dizia "WAV PCM16 em /pda/music/ (44k1/48k)"
+   — defasado desde o SOM.4. Agora: "MP3/WAV (44k1/48k) em /pda/music/ e
+   subpastas; .m3u vira fila."
+
+### Bug pego pelo teste novo, antes de qualquer flash
+
+`audio_scan.c`: a linha final era `if (truncated) *truncated = true;` —
+testava o **ponteiro de saída**, não a flag local. Todo caller que passasse
+o argumento recebia "cortado" sempre. O H3b (caso sem estouro de teto)
+pegou; o H3 (caso com estouro) passava pelo motivo errado. Corrigido com
+`if (trunc && truncated)`.
+
+### Ferramentas: o host tem 1 GB de RAM
+
+Os checks novos esbarraram em limite de ambiente: `cc1plus` era morto no
+meio do `-O2` de TU pesado do Slint e isso aparecia como FAIL de código.
+Nada nelas mente agora:
+
+* `syntaxcheck/run.sh`: um `compile_tu` único com escada de degradação —
+  `-O2` → (OOM) `-fsyntax-only` com retentativa → (OOM) GC agressivo do GCC
+  (`--param ggc-min-expand=2 --param ggc-min-heapsize=8192`). Quando
+  degrada, a linha diz `OK* … (host sem RAM p/ -O2: checagem de FORMATO não
+  rodou aqui)` — falha de ambiente não vira falso positivo nem passa em
+  silêncio.
+* `render_offscreen.sh`: mesma escada (`-O1` → `-O0` → `-O0` com GC), com
+  aviso de qual degrau foi usado. `-O0`/GC não mudam o pixel renderizado.
+* Estágio 2 cobria 9 fontes; passou a 10 com `audio_scan.c`.
+
+### Validação (host)
+
+`tools/hosttest/run.sh` tudo verde: cfg · uigate · lua-bind · wav A–F ·
+audio **A–H** (H1 subpastas+ordem, H2 teto de profundidade, H3 corte com
+aviso, H4 raiz inexistente = -1, H5 barra final normalizada) · msg-budget ·
+**stack A–E** (novo: `sizeof(mp3dec_scratch_t)` = 16.256 B; high-water MP3
+20.856 B; high-water WAV 3.448 B; constante 32.768 B cobre com 11,9 KB de
+folga; e o guard de que os dois players criam a task com a constante).
+`syntaxcheck`: 13/13 TUs + 10/10 componentes, zero warnings.
+`render_offscreen`: 13 PNGs, `render_music.png` atualizado com subpastas,
+elide e rodapé novo.
+
+Alvo: build+flash da v2.3.2 e aceite M1–M7+N1–N3 (reemitidos) —
+`release/v2.3.2/CHECKLIST_HW_v2.3.2.md`.

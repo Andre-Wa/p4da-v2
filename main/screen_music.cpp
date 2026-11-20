@@ -19,6 +19,7 @@
 #include "audio_i2s.h"
 #include "audio_playlist.h"
 #include "audio_route.h"
+#include "audio_scan.h"
 #include "audio_vol.h"
 #include "audio_tags.h"
 #include "audio_uac.h"
@@ -27,10 +28,7 @@
 
 #include "esp_log.h"
 
-#include <algorithm>
 #include <cstdio>
-#include <dirent.h>
-#include <strings.h>
 #include <vector>
 
 static const char *TAG = "music";
@@ -117,38 +115,74 @@ static void collect_entry(const char *path, void *ctx)
     v->push_back(path);
 }
 
+/* v2.3.2 (M4): a lista varria SÓ o topo de music/. Faixa em subpasta não
+ * aparecia — e como a tela Arquivos não toca áudio, não havia caminho até
+ * ela, então a fila ("Próxima"/media NEXT) nunca tinha o que tocar fora
+ * do topo. A varredura agora desce nas subpastas: o ANDAMENTO é do módulo
+ * puro audio_scan (com teste de host); aqui fica só a decisão de DISPLAY. */
+static constexpr int MUS_MAX_DEPTH = 5;       /* music/a/b/c/d/e */
+static constexpr int MUS_MAX_ENTRIES = 512;   /* teto de lista (e de tag read) */
+
+struct mus_scan_ctx {
+    std::vector<std::string> paths;
+    std::vector<std::string> disps;
+};
+
+static void mus_collect(const char *full, const char *rel, void *vctx)
+{
+    auto *c = static_cast<mus_scan_ctx *>(vctx);
+    const std::string n = base_name(full);
+    std::string disp = audio_path_is_playlist(n.c_str())
+                         ? n : display_for(full);
+    /* em subpasta, prefixa SÓ a pasta imediata — senão dois "01.mp3" de
+     * álbuns diferentes ficam idênticos na lista. O caminho inteiro não
+     * cabe: a coluna tem ~40 caracteres e engoliria o nome da faixa
+     * (visto no render offscreen). A ordem da fila continua sendo a do
+     * caminho relativo completo. */
+    const std::string r(rel);
+    const size_t slash = r.rfind('/');
+    if (slash != std::string::npos) {
+        const size_t prev = r.rfind('/', slash - 1);
+        const size_t base = (prev == std::string::npos) ? 0 : prev + 1;
+        disp = r.substr(base, slash + 1 - base) + disp;
+    }
+    c->paths.emplace_back(full);
+    c->disps.push_back(disp);
+}
+
 void refresh_music_list(void)
 {
     spawn_thread("io_music_ls", 8192, []() {
-        std::vector<std::string> paths, disps;
-        std::string dir = std::string(pda_root()) + "/music";
-        DIR *d = opendir(dir.c_str());
-        if (d) {
-            std::vector<std::string> raw;
-            struct dirent *e;
-            while ((e = readdir(d)) != NULL) {
-                std::string n = e->d_name;
-                if (audio_path_is_playable(n.c_str()) ||
-                    audio_path_is_playlist(n.c_str()))
-                    raw.push_back(n);
-            }
-            closedir(d);
-            std::sort(raw.begin(), raw.end());
-            for (auto &n : raw) {
-                std::string full = dir + "/" + n;
-                paths.push_back(full);
-                disps.push_back(audio_path_is_playlist(n.c_str())
-                                    ? n
-                                    : display_for(full));
-            }
+        const std::string root = std::string(pda_root()) + "/music";
+        mus_scan_ctx c;
+        c.paths.reserve(64);
+        c.disps.reserve(64);
+        bool trunc = false;
+        const int n = audio_scan_tree(root.c_str(), MUS_MAX_DEPTH,
+                                      MUS_MAX_ENTRIES, mus_collect, &c, &trunc);
+        if (n < 0) {
+            char msg[192];
+            snprintf(msg, sizeof(msg),
+                     "[music] %s: pasta não abre (cartão? acervo?)",
+                     root.c_str());
+            log_line(msg, NULL);
         }
-        ui_post([paths, disps]() {
+        if (trunc) {
+            char msg[192];
+            snprintf(msg, sizeof(msg),
+                     "[music] lista cortada em %d entradas (profundidade %d)"
+                     " — sobrou faixa de fora",
+                     MUS_MAX_ENTRIES, MUS_MAX_DEPTH);
+            log_line(msg, NULL);
+        }
+        ui_post([paths = std::move(c.paths), disps = std::move(c.disps)]() {
             g_mus_paths = paths;
             g_mus_names = disps;
             push_mus_ui();
         });
     });
 }
+
 
 static void play_path(const std::string &full, bool fresh)
 {

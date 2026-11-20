@@ -152,7 +152,13 @@ int main(int argc, char **argv)
             for (auto &x : v) m->push_back(slint::SharedString(x));
             return m;
         };
-        ui->set_mus_tracks(mk({"abertura.wav", "trilha_02.wav", "vocal_44k1.wav"}));
+        /* v2.3.2 (M4): a lista passou a incluir subpastas de music/, com a
+         * pasta IMEDIATA como prefixo; a última linha é longa de propósito
+         * para exercitar o overflow: elide da linha da lista */
+        ui->set_mus_tracks(mk({"abertura.wav", "teste_tom.mp3",
+                               "vocal_44k1.wav", "Trilhas/Drum Show.wav",
+                               "Sessao Acustica/Faixa 07 - ao vivo.wav",
+                               "coletanea.m3u"}));
         ui->set_mus_dev(slint::SharedString("auto — FiiO DAC"));
         ui->set_mus_state(slint::SharedString("tocando"));
         ui->set_mus_track(slint::SharedString("Drum Show"));

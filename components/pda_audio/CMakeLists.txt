@@ -3,7 +3,9 @@
 # Camada L3 do p4da-v2. Conteúdo: wav_parse (parser PCM16 puro, testado
 # no host), audio_i2s (beep da v1 M5c.1 + player local SOM.1 c/ handshake
 # beep×música + volume/mute SOM.3), audio_uac (player UAC da v1 M5a,
-# 1:1), audio_route (SOM.2 auto/interno/USB, RAM-only).
+# 1:1), audio_route (SOM.2 auto/interno/USB, RAM-only), audio_decode/
+audio_tags/audio_playlist/audio_scan (SOM.4: MP3, metadados, m3u e a
+varredura recursiva do acervo — lógica pura, testada no host).
 #
 # Decisões em docs/AUDIO.md (dono do subsistema); quirks de device
 # (H3S: 100%=mute, 0% audível, GET range timeouta) vivem nos comentários
@@ -18,6 +20,7 @@ idf_component_register(
         "audio_decode.c"
         "audio_tags.c"
         "audio_playlist.c"
+        "audio_scan.c"
     INCLUDE_DIRS "include" "minimp3"
     REQUIRES
         nvs_flash               # audio_vol: volumes por fonte persistidos

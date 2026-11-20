@@ -60,7 +60,7 @@ echo "--- rodando /tmp/wavtest_bin ---"
 
 # ---- AUDIO (SOM.4): tags ID3/LIST + m3u + pcm_src (WAV e o MP3 REAL do
 # template, decodificado no host pelo minimp3 vendorizado). ----
-gcc -std=gnu11 -Wall -Wextra -Wno-unused-parameter     -I tools/hosttest/stubs -I components/pda_audio/include -I components/pda_audio/minimp3     components/pda_audio/wav_parse.c components/pda_audio/audio_decode.c     components/pda_audio/audio_tags.c components/pda_audio/audio_playlist.c     tools/hosttest/host_audio_test.c     -o /tmp/audiotest_bin
+gcc -std=gnu11 -Wall -Wextra -Wno-unused-parameter     -I tools/hosttest/stubs -I components/pda_audio/include -I components/pda_audio/minimp3     components/pda_audio/wav_parse.c components/pda_audio/audio_decode.c     components/pda_audio/audio_tags.c components/pda_audio/audio_playlist.c     components/pda_audio/audio_scan.c tools/hosttest/host_audio_test.c     -o /tmp/audiotest_bin
 
 echo "--- rodando /tmp/audiotest_bin ---"
 /tmp/audiotest_bin
@@ -71,3 +71,25 @@ echo "--- rodando /tmp/audiotest_bin ---"
 # o set_state() é inlinado; audio_i2s.c nem entra no syntaxcheck (faltam
 # driver/i2s_std.h e esp_codec_dev.h reais). Daí a checagem estática. ----
 python3 tools/hosttest/msg_budget.py
+
+# ---- STACK (v2.3.2): orçamento de PILHA das tasks de player. A v2.3.1
+# morreu no alvo em "Stack protection fault" na au_play: o minimp3 põe
+# mp3dec_scratch_t (~16 KB) na pilha e os players tinham 8/10 KB da era
+# WAV-only. O teste mede o high-water REAL da cadeia (pilha-sonda com
+# sentinela) e reprova se AUDIO_PCM_TASK_STACK_BYTES não cobrir. ----
+gcc -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter \
+    -I tools/hosttest/stubs -I components/pda_audio/include \
+    -I components/pda_audio/minimp3 \
+    components/pda_audio/wav_parse.c components/pda_audio/audio_decode.c \
+    tools/hosttest/host_stack_test.c -lm -o /tmp/stacktest_bin
+
+echo "--- rodando /tmp/stacktest_bin ---"
+/tmp/stacktest_bin
+
+# guard: os DOIS players têm de criar a task com a CONSTANTE (o crash da
+# v2.3.1 nasceu de literais 8192/10240 que ninguém media)
+grep -A3 '"spk_play"' components/pda_audio/audio_i2s.c | grep -q 'AUDIO_PCM_TASK_STACK_BYTES' \
+    || { echo "FAIL: spk_play não usa AUDIO_PCM_TASK_STACK_BYTES"; exit 1; }
+grep -A3 '"au_play"' components/pda_audio/audio_uac.c | grep -q 'AUDIO_PCM_TASK_STACK_BYTES' \
+    || { echo "FAIL: au_play não usa AUDIO_PCM_TASK_STACK_BYTES"; exit 1; }
+echo "[stack] E: spk_play e au_play criados com AUDIO_PCM_TASK_STACK_BYTES  OK"

@@ -40,12 +40,24 @@ suíte de host verde. Nada de L(n+1) começa com pendência de L(n)
 - [x] v2.3.1: hotfix dos 3 erros de build do alvo (GCC 14) + rede de
       proteção nova no host (`-Werror` do GCC 14 no syntaxcheck,
       `stubs-i2s/` p/ audio_i2s.c, `msg_budget.py`) — F24
+- [x] v2.3.2: crash de pilha do MP3 corrigido por **medição**
+      (`AUDIO_PCM_TASK_STACK_BYTES` = 32 KB, vigiado por
+      `host_stack_test.c`) + `audio_scan.[ch]` (acervo em subpasta, M4) +
+      `overflow: elide` na lista de faixas — F25
 - **Aceite SOM.1–SOM.3:** ✅ rodadas C1–C15 (v2.2.0), R1–R6 (v2.2.1/2),
   W1–W4 (v2.2.3): WAV 44k1/48k no falante e no UAC1, pause/resume,
   beep×música, rota/handover, volume NVS inclusive no 1º play.
-- **Aceite SOM.4:** ⏳ checklist M1–M7, reemitido em
-  `release/v2.3.1/CHECKLIST_HW_v2.3.1.md` (a v2.3.0 não compilou no
-  alvo, então nunca chegou a ser flashada).
+- **Aceite SOM.4:** ⏳ em andamento (rodada v2.3.1, 2026-11-03): **M1 ✅**
+  (MP3 no falante e no fone; metadados lidos em WAV e MP3) — a retestar na
+  v2.3.2, porque o caminho rodava com pilha insuficiente; **M2 ✗ crash de
+  pilha na `au_play`** (causa achada e corrigida, F25); M3 e M5–N3
+  bloqueados pelo crash e reemitidos em
+  `release/v2.3.2/CHECKLIST_HW_v2.3.2.md`. **M4** (fila com arquivos em
+  pastas) corrigido em v2.3.2 (`audio_scan`).
+- [ ] Custo conhecido do `refresh_music_list`: ele lê o tag de cada
+      arquivo (abre+parseia por entrada). Com centenas de faixas o refresh
+      fica lento — é assíncrono, a UI não trava. Candidato a cache de tags
+      (SOM.7) se a rodada de campo reclamar.
 - [ ] C12 (UAC2) adiado por ambiente: porta HS sem VBUS em bateria e
       `usb_host_uac` 1.5.0 é UAC1-only (docs/USB.md).
 
