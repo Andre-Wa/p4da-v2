@@ -4,8 +4,8 @@
 # no host), audio_i2s (beep da v1 M5c.1 + player local SOM.1 c/ handshake
 # beep×música + volume/mute SOM.3), audio_uac (player UAC da v1 M5a,
 # 1:1), audio_route (SOM.2 auto/interno/USB, RAM-only), audio_decode/
-audio_tags/audio_playlist/audio_scan (SOM.4: MP3, metadados, m3u e a
-varredura recursiva do acervo — lógica pura, testada no host).
+# audio_tags/audio_playlist/audio_scan (SOM.4: MP3, metadados, m3u e a
+# varredura recursiva do acervo — lógica pura, testada no host).
 #
 # Decisões em docs/AUDIO.md (dono do subsistema); quirks de device
 # (H3S: 100%=mute, 0% audível, GET range timeouta) vivem nos comentários
